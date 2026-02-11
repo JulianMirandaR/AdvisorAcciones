@@ -1,8 +1,26 @@
 // Servicio para obtener datos reales usando Alpha Vantage API
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
+    authDomain: "advisoracciones.firebaseapp.com",
+    projectId: "advisoracciones",
+    storageBucket: "advisoracciones.firebasestorage.app",
+    messagingSenderId: "454193425218",
+    appId: "1:454193425218:web:54b7136d042ecd951876db",
+    measurementId: "G-7KQ8CF2SXJ"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
 const API_KEY = '077A3L6H9E3ABQFY';
 
-class RealDataService {
+export class RealDataService {
     constructor() {
+        this.db = db;
         this.baseUrl = 'https://www.alphavantage.co/query';
         // Lista de 24 acciones variadas
         this.activeStocks = [
@@ -67,6 +85,8 @@ class RealDataService {
             'INTC': { peRatio: 'N/A', eps: -0.27 }, // Negative PE
             'DIS': { peRatio: 15.96, eps: 6.81 }
         };
+
+        this.limitReached = false;
     }
 
     // Helper para pausas (Throttling)
@@ -90,6 +110,9 @@ class RealDataService {
     }
 
     async fetchStockData(symbol) {
+        // Si ya sabemos que alcanzamos el límite, no intentamos más
+        if (this.limitReached) return null;
+
         // Registrar intento de uso de API
         this.incrementUsage();
 
@@ -99,11 +122,17 @@ class RealDataService {
             const historyRes = await fetch(historyUrl);
             const historyData = await historyRes.json();
 
-            // Verificar errores de API
-            if (historyData['Note']) {
-                console.warn(`API Limit Warning for ${symbol}:`, historyData['Note']);
-                return null; // Retornamos null para intentar luego o mostrar error
+            // Verificar Límite de API (Alpha Vantage devuelve "Information" o "Note")
+            if (historyData['Information'] && historyData['Information'].includes('rate limit')) {
+                console.warn("API LIMIT REACHED");
+                this.limitReached = true;
+                return 'LIMIT_REACHED';
             }
+            if (historyData['Note']) {
+                // A veces es un aviso suave, pero mejor parar si es frecuente
+                console.warn(`API Limit Warning for ${symbol}:`, historyData['Note']);
+            }
+
             if (!historyData['Time Series (Daily)']) {
                 console.error(`No data for ${symbol}`, historyData);
                 return null;
@@ -202,7 +231,35 @@ class RealDataService {
         }
     }
 
-    // Método principal: Carga incremental y persistente
+    // --- FIREBASE HELPERS ---
+    async getFirestoreData(date) {
+        try {
+            const docRef = doc(this.db, "stocks", date);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                return docSnap.data(); // Returns object { AAPL: {...}, MSFT: {...} }
+            } else {
+                return null;
+            }
+        } catch (e) {
+            console.error("Error fetching from Firestore:", e);
+            return null;
+        }
+    }
+
+    async saveToFirestore(date, symbol, data) {
+        try {
+            const docRef = doc(this.db, "stocks", date);
+            // Save incremental update
+            await setDoc(docRef, {
+                [symbol]: data
+            }, { merge: true });
+        } catch (e) {
+            console.error("Error saving to Firestore:", e);
+        }
+    }
+
+    // Método principal: Carga incremental y persistente con Firebase
     async loadStocks(onStockLoaded, onProgressMsg) {
         const today = this.getTodayDateString();
         const cacheKey = `stocks_cache_${today}`;
@@ -216,16 +273,39 @@ class RealDataService {
             currentCache = [];
         }
 
-        // Mapa para evitar duplicados
+        // 2. Intentar obtener datos globales de Firebase (La nube)
+        if (onProgressMsg) onProgressMsg("Sincronizando con la nube...");
+        const firestoreData = await this.getFirestoreData(today);
+
+        let cloudCount = 0;
+        if (firestoreData) {
+            // Merge: Agregar lo de Firebase a nuestro caché local si no lo tenemos
+            const localMap = new Map(currentCache.map(s => [s.symbol, s]));
+
+            Object.values(firestoreData).forEach(stockData => {
+                if (!localMap.has(stockData.symbol)) {
+                    currentCache.push(stockData);
+                    cloudCount++;
+                }
+            });
+
+            // Actualizar Local Storage con lo nuevo de la nube
+            if (cloudCount > 0) {
+                localStorage.setItem(cacheKey, JSON.stringify(currentCache));
+            }
+        }
+
+        // Mapa actualizado para evitar duplicados
         const cacheMap = new Map(currentCache.map(s => [s.symbol, s]));
 
-        // Entregar datos cacheados inmediatamente
+        // Entregar datos combinados inmediatamente
         if (currentCache.length > 0) {
-            if (onProgressMsg) onProgressMsg(`Recuperadas ${currentCache.length} acciones de memoria.`);
+            const msg = cloudCount > 0 ? `Recuperadas ${currentCache.length} acciones (${cloudCount} desde nube).` : `Recuperadas ${currentCache.length} acciones de memoria.`;
+            if (onProgressMsg) onProgressMsg(msg);
             onStockLoaded(currentCache);
         }
 
-        // 2. Identificar qué falta descargar hoy
+        // 3. Identificar qué falta descargar hoy
         const pendingStocks = this.activeStocks.filter(s => !cacheMap.has(s.symbol));
 
         if (pendingStocks.length === 0) {
@@ -233,16 +313,30 @@ class RealDataService {
             return;
         }
 
-        // 3. Descargar faltantes secuencialmente
+        // 4. Descargar faltantes secuencialmente
         for (let i = 0; i < pendingStocks.length; i++) {
+            if (this.limitReached) {
+                if (onProgressMsg) onProgressMsg("⚠️ Límite de API alcanzado. Deteniendo proceso.");
+                break;
+            }
+
             const stockDef = pendingStocks[i];
             const msg = `Descargando ${stockDef.symbol} (${i + 1}/${pendingStocks.length} faltantes)... Pausa 15s...`;
             if (onProgressMsg) onProgressMsg(msg);
 
             const data = await this.fetchStockData(stockDef.symbol);
 
+            if (data === 'LIMIT_REACHED') {
+                if (onProgressMsg) onProgressMsg(`Fin de cuota diaria en ${stockDef.symbol}.`);
+                this.limitReached = true;
+                break;
+            }
+
             if (data) {
-                // Guardado Incremental: Leemos caché de nuevo por si acaso, pusheamos y guardamos
+                // Guardar en Firebase (Nube)
+                await this.saveToFirestore(today, stockDef.symbol, data);
+
+                // Guardado Incremental Local
                 currentCache.push(data);
                 localStorage.setItem(cacheKey, JSON.stringify(currentCache));
 
@@ -253,11 +347,14 @@ class RealDataService {
             }
 
             // Esperar 15 segundos entre peticiones para respetar API (excepto el último)
-            if (i < pendingStocks.length - 1) {
+            if (i < pendingStocks.length - 1 && !this.limitReached) {
                 await this.wait(15000);
             }
         }
 
-        if (onProgressMsg) onProgressMsg("Actualización Finalizada.");
+        if (onProgressMsg) {
+            if (this.limitReached) onProgressMsg("⚠️ Cuota Diaria Agotada. Vuelva mañana.");
+            else onProgressMsg("Actualización Finalizada.");
+        }
     }
 }

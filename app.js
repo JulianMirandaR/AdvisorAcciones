@@ -1,5 +1,6 @@
 // --- Analysis Logic ---
 // (Note: `stocks` array and `generateStockData` removed as requested)
+import { RealDataService } from './realData.js';
 
 // --- Logic for Recommendations ---
 
@@ -130,7 +131,7 @@ const tabs = document.querySelectorAll('.tab-btn');
 const marketStatus = document.getElementById('marketStatus');
 
 let currentTerm = 'short'; // 'short' or 'long'
-const realDataService = typeof RealDataService !== 'undefined' ? new RealDataService() : null;
+const realDataService = new RealDataService();
 
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
@@ -143,18 +144,26 @@ function renderMarketStatus() {
     if (realDataService) {
         const usage = realDataService.getDailyUsage();
         const limit = 25; // Límite gratuito aproximado
-        const color = usage >= limit ? 'var(--accent-red)' : 'var(--accent-green)';
-        usageInfo = `<br><span style="font-size: 0.8rem; color: ${color};">Peticiones API Hoy: <strong>${usage}</strong> / ${limit}</span>`;
+
+        let color = 'var(--accent-green)';
+        let statusText = `Peticiones API Hoy: <strong>${usage}</strong> / ${limit}`;
+
+        if (usage >= limit || realDataService.limitReached) {
+            color = 'var(--accent-red)';
+            statusText = `⚠️ Límite de API Alcanzado (${usage}/${limit})`;
+        }
+
+        usageInfo = `<br><span style="font-size: 0.8rem; color: ${color};">${statusText}</span>`;
     }
 
     marketStatus.innerHTML = `
         <span class="status-indicator status-up"></span>
         <div>
-            Datos del Mercado para: ${today} (Actualizados diariamente)
+            Datos del Mercado para: ${today}
             ${usageInfo}
         </div>
     `;
-    marketStatus.style.borderColor = 'var(--text-primary)';
+    marketStatus.style.borderColor = (realDataService && realDataService.limitReached) ? 'var(--accent-red)' : 'var(--text-primary)';
 }
 
 async function initDashboard() {
