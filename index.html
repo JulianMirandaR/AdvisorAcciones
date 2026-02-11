@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Análisis de Acciones y Recomendaciones</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+    <link rel="stylesheet" href="estilos.css">
+    <!-- Chart.js for charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Technical Indicators Library for calculating SMA, RSI, MACD on the client side -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/technicalindicators/3.1.0/index.browser.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Advisor de Inversiones</h1>
+            <p>Análisis Técnico y Fundamental en Tiempo Real</p>
+        </header>
+
+        <div class="market-status" id="marketStatus">
+            <!-- Market trend will be injected here -->
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" data-term="short">Corto Plazo</button>
+            <button class="tab-btn" data-term="long">Largo Plazo</button>
+        </div>
+
+        <main id="recommendations-container" class="grid-container">
+            <!-- Stock cards will be injected here -->
+        </main>
+    </div>
+    <script src="realData.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
