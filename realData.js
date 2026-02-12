@@ -16,7 +16,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const API_KEY = '2IO29JWKMGBIP1SM';
+import { API_KEY } from './config.js';
+
+// const API_KEY = '...'; // Moved to config.js
+
 
 export class RealDataService {
     constructor() {
@@ -36,8 +39,6 @@ export class RealDataService {
             // Finance
             { symbol: 'JPM', name: 'JPMorgan Chase' },
             { symbol: 'V', name: 'Visa Inc.' },
-            { symbol: 'MA', name: 'Mastercard' },
-            { symbol: 'BAC', name: 'Bank of America' },
             // Consumer & Retail
             { symbol: 'KO', name: 'Coca-Cola' },
             { symbol: 'PEP', name: 'PepsiCo' },
