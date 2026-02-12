@@ -275,54 +275,50 @@ export class RealDataService {
             currentCache = [];
         }
 
+        // Informar UI inicial con caché
+        if (currentCache.length > 0) {
+            onStockLoaded(currentCache);
+        }
+
         // 2. Intentar obtener datos globales de Firebase (La nube)
         if (onProgressMsg) onProgressMsg("Sincronizando con la nube...");
 
         let firestoreData = null;
         try {
+            // Intentar leer todo el documento del día
             firestoreData = await this.getFirestoreData(today);
         } catch (e) {
             console.error("Firestore Read Error:", e);
-            if (e.code === 'permission-denied') {
-                if (onProgressMsg) onProgressMsg("⚠️ Error: Permisos Denegados. Revisa reglas en Firebase Console.");
-            } else if (e.code === 'unimplemented') {
-                if (onProgressMsg) onProgressMsg("⚠️ Error: Base de Datos Firestore no creada.");
-            } else {
-                if (onProgressMsg) onProgressMsg(`⚠️ Error de Conexión: ${e.message}`);
-            }
-            // Continue with local cache only
+            if (onProgressMsg) onProgressMsg(`⚠️ Error de Conexión Nube: ${e.code || e.message}`);
         }
 
         let cloudCount = 0;
-        if (firestoreData) {
-            // Merge: Agregar lo de Firebase a nuestro caché local si no lo tenemos
-            const localMap = new Map(currentCache.map(s => [s.symbol, s]));
+        let mergedList = [...currentCache];
+        const localMap = new Map(currentCache.map(s => [s.symbol, s]));
 
+        if (firestoreData) {
+            // firestoreData es un objeto { AAPL: {...}, MSFT: {...} }
+            // Lo convertimos a array y mezclamos
             Object.values(firestoreData).forEach(stockData => {
                 if (!localMap.has(stockData.symbol)) {
-                    currentCache.push(stockData);
+                    mergedList.push(stockData);
+                    localMap.set(stockData.symbol, stockData); // Update map
                     cloudCount++;
                 }
             });
 
-            // Actualizar Local Storage con lo nuevo de la nube
+            // Si hubo datos nuevos de la nube, actualizamos caché local y UI
             if (cloudCount > 0) {
-                localStorage.setItem(cacheKey, JSON.stringify(currentCache));
+                localStorage.setItem(cacheKey, JSON.stringify(mergedList));
+                onStockLoaded(mergedList);
+                if (onProgressMsg) onProgressMsg(`Sincronizado: ${cloudCount} acciones recuperadas de la nube.`);
             }
         }
 
-        // Mapa actualizado para evitar duplicados
-        const cacheMap = new Map(currentCache.map(s => [s.symbol, s]));
-
-        // Entregar datos combinados inmediatamente
-        if (currentCache.length > 0) {
-            const msg = cloudCount > 0 ? `Recuperadas ${currentCache.length} acciones (${cloudCount} desde nube).` : `Recuperadas ${currentCache.length} acciones de memoria.`;
-            if (onProgressMsg) onProgressMsg(msg);
-            onStockLoaded(currentCache);
-        }
-
         // 3. Identificar qué falta descargar hoy
-        const pendingStocks = this.activeStocks.filter(s => !cacheMap.has(s.symbol));
+        // Usamos la lista combinada (mergedList) para ver qué nos falta de this.activeStocks
+        const currentMap = new Map(mergedList.map(s => [s.symbol, s]));
+        const pendingStocks = this.activeStocks.filter(s => !currentMap.has(s.symbol));
 
         if (pendingStocks.length === 0) {
             if (onProgressMsg) onProgressMsg("Datos completos por hoy.");
@@ -340,6 +336,10 @@ export class RealDataService {
             const msg = `Descargando ${stockDef.symbol} (${i + 1}/${pendingStocks.length} faltantes)... Pausa 15s...`;
             if (onProgressMsg) onProgressMsg(msg);
 
+            // Pausa antes de pedir (excepto el primero si venimos de la nada, pero mejor prevenir)
+            if (i > 0) await this.wait(15000);
+
+
             const data = await this.fetchStockData(stockDef.symbol);
 
             if (data === 'LIMIT_REACHED') {
@@ -353,22 +353,17 @@ export class RealDataService {
                 try {
                     await this.saveToFirestore(today, stockDef.symbol, data);
                 } catch (e) {
-                    if (onProgressMsg) onProgressMsg(`⚠️ Error al guardar en nube: ${e.code || e.message}`);
+                    console.error("Firestore Save Error", e);
                 }
 
                 // Guardado Incremental Local
-                currentCache.push(data);
-                localStorage.setItem(cacheKey, JSON.stringify(currentCache));
+                mergedList.push(data); // Add to master list
+                localStorage.setItem(cacheKey, JSON.stringify(mergedList));
 
                 // Notificar a UI
-                onStockLoaded(currentCache);
+                onStockLoaded(mergedList);
             } else {
                 if (onProgressMsg) onProgressMsg(`Error al descargar ${stockDef.symbol}. Saltando.`);
-            }
-
-            // Esperar 15 segundos entre peticiones para respetar API (excepto el último)
-            if (i < pendingStocks.length - 1 && !this.limitReached) {
-                await this.wait(15000);
             }
         }
 
