@@ -16,7 +16,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const API_KEY = '077A3L6H9E3ABQFY';
+const API_KEY = '2IO29JWKMGBIP1SM';
 
 export class RealDataService {
     constructor() {
