@@ -135,6 +135,7 @@ const realDataService = new RealDataService();
 
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
+const chartInstances = {}; // Helper to keep track of chart instances
 
 function renderMarketStatus() {
     // Estado neutral por defecto o basado en fecha
@@ -316,7 +317,8 @@ renderMarketStatus();
 initDashboard();
 
 // Helper to keep track of chart instances and destroy them to avoid "Canvas is already in use" errors
-const chartInstances = {};
+// Moved to top
+
 
 function renderChart(data, canvasId) {
     const ctx = document.getElementById(canvasId).getContext('2d');

@@ -242,8 +242,8 @@ export class RealDataService {
                 return null;
             }
         } catch (e) {
-            console.error("Error fetching from Firestore:", e);
-            return null;
+            // Re-throw to handle in loadStocks with UI feedback
+            throw e;
         }
     }
 
@@ -256,6 +256,7 @@ export class RealDataService {
             }, { merge: true });
         } catch (e) {
             console.error("Error saving to Firestore:", e);
+            throw e;
         }
     }
 
@@ -275,7 +276,21 @@ export class RealDataService {
 
         // 2. Intentar obtener datos globales de Firebase (La nube)
         if (onProgressMsg) onProgressMsg("Sincronizando con la nube...");
-        const firestoreData = await this.getFirestoreData(today);
+
+        let firestoreData = null;
+        try {
+            firestoreData = await this.getFirestoreData(today);
+        } catch (e) {
+            console.error("Firestore Read Error:", e);
+            if (e.code === 'permission-denied') {
+                if (onProgressMsg) onProgressMsg("⚠️ Error: Permisos Denegados. Revisa reglas en Firebase Console.");
+            } else if (e.code === 'unimplemented') {
+                if (onProgressMsg) onProgressMsg("⚠️ Error: Base de Datos Firestore no creada.");
+            } else {
+                if (onProgressMsg) onProgressMsg(`⚠️ Error de Conexión: ${e.message}`);
+            }
+            // Continue with local cache only
+        }
 
         let cloudCount = 0;
         if (firestoreData) {
@@ -334,7 +349,11 @@ export class RealDataService {
 
             if (data) {
                 // Guardar en Firebase (Nube)
-                await this.saveToFirestore(today, stockDef.symbol, data);
+                try {
+                    await this.saveToFirestore(today, stockDef.symbol, data);
+                } catch (e) {
+                    if (onProgressMsg) onProgressMsg(`⚠️ Error al guardar en nube: ${e.code || e.message}`);
+                }
 
                 // Guardado Incremental Local
                 currentCache.push(data);
