@@ -2,6 +2,9 @@
 // (Note: `stocks` array and `generateStockData` removed as requested)
 import { RealDataService } from './realData.js';
 
+// Helper to keep track of chart instances (moved to top to avoid initialization errors)
+const chartInstances = {};
+
 // --- Logic for Recommendations ---
 
 function analyzeStock(data, term) {
@@ -135,7 +138,7 @@ const realDataService = new RealDataService();
 
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
-const chartInstances = {}; // Helper to keep track of chart instances
+
 
 function renderMarketStatus() {
     // Estado neutral por defecto o basado en fecha
@@ -317,7 +320,7 @@ renderMarketStatus();
 initDashboard();
 
 // Helper to keep track of chart instances and destroy them to avoid "Canvas is already in use" errors
-// Moved to top
+
 
 
 function renderChart(data, canvasId) {
