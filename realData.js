@@ -1,6 +1,6 @@
 // Servicio para obtener datos reales usando Alpha Vantage API
-import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -298,6 +298,10 @@ export class RealDataService {
         } catch (e) {
             console.error("Firestore Read Error:", e);
             if (onProgressMsg) onProgressMsg(`⚠️ Error de Conexión Nube: ${e.code || e.message}`);
+            // Alert user if on production/github to debug
+            if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                alert(`Error conectando a Firebase (Nube): ${e.message}\n\nAsegúrate de agregar '${window.location.hostname}' a los 'Dominios Autorizados' en Firebase Console -> Authentication -> Settings.`);
+            }
         }
 
         let cloudCount = 0;

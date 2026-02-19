@@ -1,13 +1,27 @@
 :root {
-    --bg-color: #0a0f1b;
-    --card-bg: #1e293b;
-    --text-primary: #f1f5f9;
-    --text-secondary: #94a3b8;
-    --accent-blue: #3b82f6;
-    --accent-green: #22c55e;
-    --accent-red: #ef4444;
-    --border-color: #334155;
-    --hover-bg: #334155;
+    /* Sleek Obsidian Palette */
+    --bg-color: #030712;
+    /* Ultra dark blue/black (Gray 950) */
+    --card-bg: #111827;
+    /* Gray 900 */
+    --text-primary: #f9fafb;
+    /* Gray 50 */
+    --text-secondary: #9ca3af;
+    /* Gray 400 */
+
+    /* Vibrant Accents */
+    --accent-blue: #0ea5e9;
+    /* Sky 500 - Neon Blue */
+    --accent-green: #10b981;
+    /* Emerald 500 */
+    --accent-red: #f43f5e;
+    /* Rose 500 */
+
+    --border-color: #1f2937;
+    /* Gray 800 */
+    --hover-bg: #1f2937;
+    /* Gray 800 */
+    --glow-shadow: 0 0 15px rgba(14, 165, 233, 0.15);
 }
 
 * {
@@ -37,7 +51,8 @@ header {
 header h1 {
     font-size: 2.5rem;
     font-weight: 700;
-    background: linear-gradient(to right, var(--accent-blue), var(--accent-green));
+    background: linear-gradient(to right, var(--accent-blue), #6366f1);
+    /* Gradient Blue -> Indigo */
     position: relative;
     display: inline-block;
     color: transparent;
@@ -86,8 +101,8 @@ header h1 {
 }
 
 .tab-btn {
-    background-color: transparent;
-    border: 2px solid var(--border-color);
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
     color: var(--text-secondary);
     padding: 0.75rem 2rem;
     border-radius: 9999px;
@@ -97,15 +112,16 @@ header h1 {
 }
 
 .tab-btn:hover {
-    border-color: var(--accent-blue);
+    background-color: var(--hover-bg);
+    border-color: var(--text-secondary);
     color: var(--text-primary);
 }
 
 .tab-btn.active {
-    background-color: var(--accent-blue);
-    border-color: var(--accent-blue);
+    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    border-color: transparent;
     color: white;
-    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
 }
 
 .grid-container {
@@ -119,26 +135,31 @@ header h1 {
     border-radius: 16px;
     padding: 1.5rem;
     border: 1px solid var(--border-color);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     animation: fadeIn 0.5s ease-out;
+    position: relative;
+    overflow: hidden;
+    /* For shine effects if added later */
+}
+
+/* Hover Effect: Lift & Glow */
+.stock-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--glow-shadow), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    border-color: var(--accent-blue);
+    background-color: #172033;
 }
 
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(20px);
     }
 
     to {
         opacity: 1;
         transform: translateY(0);
     }
-}
-
-.stock-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
-    border-color: var(--accent-blue);
 }
 
 .card-header {
