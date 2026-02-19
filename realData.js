@@ -340,6 +340,31 @@ export class RealDataService {
             }
         }
 
+        // --- FIX: SUBIR DATOS LOCALES A LA NUBE SI FALTAN ---
+        // Si tengo datos en mi PC (localStorage) que NO están en Firebase, los subo para que otros dispositivos los vean.
+        if (currentCache.length > 0) {
+            const cloudMap = firestoreData || {};
+            const localOnly = currentCache.filter(localStock => !cloudMap[localStock.symbol]);
+
+            if (localOnly.length > 0) {
+                console.log(`Encontrados ${localOnly.length} datos locales no sincronizados en nube. Subiendo...`);
+                if (onProgressMsg) onProgressMsg(`Subiendo datos locales a la nube (${localOnly.length})...`);
+
+                // Subir sin bloquear demasiado (no await loop estricto que detenga la UI, pero si async)
+                // Usamos Promise.all para velocidad, o loop si queremos evitar write limits
+                // Dado que son sets pequeños (max 24), loop simple está bien.
+                for (const stock of localOnly) {
+                    try {
+                        await this.saveToFirestore(today, stock.symbol, stock);
+                        console.log(`Sincronizado ${stock.symbol} a la nube.`);
+                    } catch (err) {
+                        console.error(`Error subiendo ${stock.symbol} a nube:`, err);
+                    }
+                }
+            }
+        }
+        // -----------------------------------------------------
+
         // 3. Identificar qué falta descargar hoy
         // Usamos la lista combinada (mergedList) para ver qué nos falta de this.activeStocks
         const currentMap = new Map(mergedList.map(s => [s.symbol, s]));
