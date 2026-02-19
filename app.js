@@ -137,7 +137,11 @@ let currentTerm = 'short'; // 'short' or 'long'
 const realDataService = new RealDataService();
 
 // Global container state
+// Global container state
 let globalStocksData = []; // To keep track for re-sorting
+let activeFilter = 'all'; // all, buy, hold, sell, favorites
+let searchTerm = '';
+let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
 
 
 function renderMarketStatus() {
@@ -187,6 +191,7 @@ async function initDashboard() {
         globalStocksData = updatedList; // Update global list reference
         refreshUI(); // Re-render sorted list
         renderMarketStatus(); // Actualizar contador de API
+        renderHeatmap(); // Update Heatmap
     };
 
     const handleProgress = (msg) => {
@@ -208,15 +213,42 @@ function refreshUI() {
         // Si quisieramos mantener un loader pequeñito arriba, podriamos, pero el usuario quiere ver "juntandose"
     }
 
-    // Process analysis
-    const analyzedStocks = globalStocksData.map(data => {
+    // --- Filter & Search Logic ---
+    const filteredList = globalStocksData.filter(item => {
+        // 1. Search Filter
+        const matchesSearch = item.symbol.toLowerCase().includes(searchTerm) ||
+            item.name.toLowerCase().includes(searchTerm);
+        if (!matchesSearch) return false;
+
+        // 2. Category Filter (Pre-analysis check or Post-analysis? Post is better but costly to re-analyze everything?)
+        // Let's analyze first then filter, or better: analyze effectively efficiently. 
+        // actually we need to analyze to know if it's "buy" or "sell".
+        return true;
+    });
+
+    // Process analysis (We analyze ALL matching search to get the Signal)
+    let analyzedStocks = filteredList.map(data => {
         const analysis = analyzeStock(data, currentTerm);
         return { data, analysis };
     });
 
+    // 3. Apply Signal/Watchlist Filter
+    if (activeFilter === 'favorites') {
+        analyzedStocks = analyzedStocks.filter(item => watchlist.includes(item.data.symbol));
+    } else if (activeFilter !== 'all') {
+        analyzedStocks = analyzedStocks.filter(item => {
+            const sig = item.analysis.signal.toLowerCase();
+            if (activeFilter === 'buy') return sig.includes('compra');
+            if (activeFilter === 'sell') return sig.includes('venta');
+            if (activeFilter === 'hold') return sig.includes('mantener');
+            return true;
+        });
+    }
+
     // Sort by Score (Best opportunities first)
     analyzedStocks.sort((a, b) => b.analysis.score - a.analysis.score);
 
+    // Render
     analyzedStocks.forEach(item => {
         const cardHTML = createCardHTML(item);
         container.appendChild(cardHTML);
@@ -257,10 +289,15 @@ function createCardHTML(item) {
         </div>`;
     }
 
+    const isFavorite = watchlist.includes(data.symbol);
+    const starClass = isFavorite ? 'active' : '';
+
     card.innerHTML = `
         <div class="card-header">
             <div>
-                <div class="stock-symbol">${data.symbol}</div>
+                <div class="stock-symbol">${data.symbol} 
+                    <span class="watchlist-star ${starClass}" onclick="toggleWatchlist('${data.symbol}', event)">★</span>
+                </div>
                 <div class="stock-name">${data.name}</div>
             </div>
             <div class="recommendation-badge ${badgeClass}">${analysis.signal}</div>
@@ -314,6 +351,40 @@ tabs.forEach(tab => {
         refreshUI(); // Optimized refresh (no reload needed)
     });
 });
+
+// Search & Filter Events
+const searchInput = document.getElementById('searchInput');
+const filterBtns = document.querySelectorAll('.filter-btn');
+
+if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+        searchTerm = e.target.value.toLowerCase().trim();
+        refreshUI();
+    });
+}
+
+filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeFilter = btn.dataset.filter;
+        refreshUI();
+    });
+});
+
+// Watchlist Function globally accessible
+window.toggleWatchlist = (symbol, event) => {
+    if (event) event.stopPropagation(); // prevent modal open if any
+
+    const index = watchlist.indexOf(symbol);
+    if (index === -1) {
+        watchlist.push(symbol);
+    } else {
+        watchlist.splice(index, 1);
+    }
+    localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
+    refreshUI();
+};
 
 // Init
 renderMarketStatus();
@@ -435,5 +506,42 @@ function renderChart(data, canvasId) {
                 }
             }
         }
+    });
+}
+
+function renderHeatmap() {
+    const heatmapContainer = document.getElementById('marketHeatmap');
+    if (!heatmapContainer) return;
+
+    heatmapContainer.innerHTML = '';
+
+    // Sort by magnitude of change
+    const sortedByChange = [...globalStocksData].sort((a, b) => Math.abs(parseFloat(b.changePercent)) - Math.abs(parseFloat(a.changePercent)));
+
+    sortedByChange.forEach(stock => {
+        const change = parseFloat(stock.changePercent);
+        const block = document.createElement('div');
+        block.className = 'heatmap-block';
+
+        // Intensity Color Logic
+        const intensity = Math.min(Math.abs(change) / 3, 1); // Cap at 3% change for max color
+
+        if (change >= 0) {
+            // Green: #22c55e
+            block.style.backgroundColor = `rgba(34, 197, 94, ${0.1 + (intensity * 0.9)})`;
+            block.style.border = '1px solid #15803d'; // Green border
+        } else {
+            // Red: #ef4444
+            block.style.backgroundColor = `rgba(239, 68, 68, ${0.1 + (intensity * 0.9)})`;
+            block.style.border = '1px solid #b91c1c'; // Red border
+        }
+
+        block.innerHTML = `
+            <span class="heatmap-symbol">${stock.symbol}</span>
+            <span class="heatmap-change">${change > 0 ? '+' : ''}${change.toFixed(2)}%</span>
+        `;
+
+        block.title = `${stock.name}: $${stock.price}`;
+        heatmapContainer.appendChild(block);
     });
 }

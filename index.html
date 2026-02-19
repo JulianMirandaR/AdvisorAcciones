@@ -23,14 +23,39 @@
             <!-- Market trend will be injected here -->
         </div>
 
+        <!-- Heatmap Section -->
+        <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 1rem;">Mapa de Calor del Mercado</h4>
+        <div id="marketHeatmap" class="heatmap-container"></div>
+
         <div class="tabs">
             <button class="tab-btn active" data-term="short">Corto Plazo</button>
             <button class="tab-btn" data-term="long">Largo Plazo</button>
         </div>
 
+        <div class="controls-container">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Buscar acción (ej. AAPL)...">
+            </div>
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">Todas</button>
+                <button class="filter-btn" data-filter="buy">Comprar</button>
+                <button class="filter-btn" data-filter="hold">Mantener</button>
+                <button class="filter-btn" data-filter="sell">Vender</button>
+                <button class="filter-btn" data-filter="favorites">⭐ Favoritas</button>
+            </div>
+        </div>
+
         <main id="recommendations-container" class="grid-container">
             <!-- Stock cards will be injected here -->
         </main>
+        
+        <!-- Modal for details -->
+        <div id="stockModal" class="modal">
+            <div class="modal-content">
+                <span class="close-modal">&times;</span>
+                <div id="modalBody"></div>
+            </div>
+        </div>
     </div>
     <script type="module" src="realData.js"></script>
     <script type="module" src="app.js"></script>
