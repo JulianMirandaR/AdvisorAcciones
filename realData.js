@@ -123,6 +123,16 @@ export class RealDataService {
             const historyRes = await fetch(historyUrl);
             const historyData = await historyRes.json();
 
+            // Verificar Error de API Key
+            if (historyData['Error Message']) {
+                console.error("API Error:", historyData['Error Message']);
+                if (historyData['Error Message'].includes('apikey is invalid')) {
+                    alert("ERROR CRÍTICO: La API Key de Alpha Vantage es inválida o falta.\n\nPor favor verifica el archivo config.js y asegúrate de tener una clave válida.\nPuedes obtener una gratis en alphavantage.co");
+                    this.limitReached = true; // Detener intentos
+                    return null;
+                }
+            }
+
             // Verificar Límite de API (Alpha Vantage devuelve "Information" o "Note")
             if (historyData['Information'] && historyData['Information'].includes('rate limit')) {
                 console.warn("API LIMIT REACHED");
@@ -130,7 +140,6 @@ export class RealDataService {
                 return 'LIMIT_REACHED';
             }
             if (historyData['Note']) {
-                // A veces es un aviso suave, pero mejor parar si es frecuente
                 console.warn(`API Limit Warning for ${symbol}:`, historyData['Note']);
             }
 
