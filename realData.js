@@ -159,21 +159,34 @@ export class RealDataService {
 
             const closePrices = prices.map(p => p.close);
 
-            // 2. Calcular Indicadores
+            // 2. Calcular Indicadores (Acceder via window.SMA o window.technicalindicators.SMA)
+
+            // Helper para obtener funcion de indicador
+            const getIndicator = (name) => {
+                if (window[name]) return window[name];
+                if (window.technicalindicators && window.technicalindicators[name]) return window.technicalindicators[name];
+                return null;
+            };
+
+            const SMA = getIndicator('SMA');
+            const EMA = getIndicator('EMA');
+            const RSI = getIndicator('RSI');
+            const MACD = getIndicator('MACD');
+
             // SMA 50
-            const sma50Data = window.SMA ? window.SMA.calculate({ period: 50, values: closePrices }) : [];
+            const sma50Data = SMA ? SMA.calculate({ period: 50, values: closePrices }) : [];
             const sma50 = sma50Data.length > 0 ? sma50Data[sma50Data.length - 1] : 0;
 
             // EMA 20
-            const ema20Data = window.EMA ? window.EMA.calculate({ period: 20, values: closePrices }) : [];
+            const ema20Data = EMA ? EMA.calculate({ period: 20, values: closePrices }) : [];
             const ema20 = ema20Data.length > 0 ? ema20Data[ema20Data.length - 1] : 0;
 
             // SMA 200
-            const sma200Data = window.SMA ? window.SMA.calculate({ period: 200, values: closePrices }) : [];
+            const sma200Data = SMA ? SMA.calculate({ period: 200, values: closePrices }) : [];
             const sma200 = sma200Data.length > 0 ? sma200Data[sma200Data.length - 1] : 0;
 
             // RSI 14
-            const rsiData = window.RSI ? window.RSI.calculate({ period: 14, values: closePrices }) : [];
+            const rsiData = RSI ? RSI.calculate({ period: 14, values: closePrices }) : [];
             const rsi = rsiData.length > 0 ? rsiData[rsiData.length - 1] : 50;
 
             // MACD
@@ -185,7 +198,7 @@ export class RealDataService {
                 SimpleMAOscillator: false,
                 SimpleMASignal: false
             };
-            const macdData = window.MACD ? window.MACD.calculate(macdInput) : [];
+            const macdData = MACD ? MACD.calculate(macdInput) : [];
             const latestMacd = macdData.length > 0 ? macdData[macdData.length - 1] : { MACD: 0, signal: 0, histogram: 0 };
 
             // Datos actuales
