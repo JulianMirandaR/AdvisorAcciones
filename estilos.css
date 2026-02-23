@@ -444,6 +444,62 @@ header h1 {
     color: var(--text-primary);
 }
 
+/* --- Indicador Buffett --- */
+.buffett-container {
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.buffett-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin: 0.5rem 0;
+}
+
+.buffett-status {
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.buffett-bar-bg {
+    width: 100%;
+    max-width: 500px;
+    height: 12px;
+    background-color: #1f2937;
+    border-radius: 9999px;
+    overflow: hidden;
+    position: relative;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.buffett-bar-fill {
+    height: 100%;
+    border-radius: 9999px;
+    transition: width 1s ease-out;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%);
+    /* Add a subtle gloss */
+}
+
+.buffett-labels {
+    width: 100%;
+    max-width: 500px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
 /* --- Heatmap --- */
 .heatmap-container {
     display: flex;

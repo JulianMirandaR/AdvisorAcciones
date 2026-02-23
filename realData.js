@@ -1,6 +1,6 @@
 // Servicio para obtener datos desde Firebase (Los datos son actualizados diariamente por el backend / GitHub Actions)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+import { getFirestore, collection, query, orderBy, limit, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -104,6 +104,27 @@ export class RealDataService {
         } else {
             console.log("No data in Firestore yet.");
             if (onProgressMsg) onProgressMsg("No hay datos en la nube. Esperando actualización del servidor.");
+        }
+    }
+
+    // Método para cargar datos Macro (Indicador Buffett)
+    async loadMacroIndicator(onMacroLoaded) {
+        const cacheKey = `macro_cache`;
+        try {
+            const currentCache = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+            if (currentCache) onMacroLoaded(currentCache);
+        } catch (e) { console.error("Error reading macro cache", e); }
+
+        try {
+            const docRef = doc(this.db, "macro", "latest");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                localStorage.setItem(cacheKey, JSON.stringify(data));
+                onMacroLoaded(data);
+            }
+        } catch (e) {
+            console.error("Firestore Macro Read Error:", e);
         }
     }
 }

@@ -22,6 +22,11 @@ if (!API_KEY) {
     process.exit(1);
 }
 
+const FRED_API_KEY = process.env.FRED_API_KEY;
+if (!FRED_API_KEY) {
+    console.warn("FRED_API_KEY environment variable is not defined. Macro data will be skipped.");
+}
+
 const activeStocks = [
     { symbol: 'AAPL', name: 'Apple Inc.' },
     { symbol: 'MSFT', name: 'Microsoft Corp.' },
@@ -75,6 +80,36 @@ const staticFundamentals = {
 };
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchBuffettIndicator() {
+    if (!FRED_API_KEY) return null;
+    console.log("Fetching Macro Data (Buffett Indicator) from FRED...");
+    try {
+        // 1. GDP (Gross Domestic Product) - Billions of Dollars
+        const gdpUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=GDP&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=1`;
+        const gdpRes = await fetch(gdpUrl);
+        const gdpData = await gdpRes.json();
+        const gdpValue = parseFloat(gdpData.observations[0].value);
+
+        // 2. Total Market Cap proxy: Nonfinancial corporate business; corporate equities - Millions of Dollars
+        const capUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=NCBEILQ027S&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=1`;
+        const capRes = await fetch(capUrl);
+        const capData = await capRes.json();
+        const capValue = parseFloat(capData.observations[0].value) / 1000; // Convert to Billions to match GDP
+
+        const buffettIndicator = (capValue / gdpValue) * 100;
+
+        return {
+            buffettIndicator: parseFloat(buffettIndicator.toFixed(2)),
+            gdp: parseFloat(gdpValue.toFixed(2)),
+            marketCap: parseFloat(capValue.toFixed(2)),
+            lastUpdated: new Date().toISOString()
+        };
+    } catch (error) {
+        console.error("Failed to fetch Buffett Indicator:", error);
+        return null;
+    }
+}
 
 async function main() {
     const today = new Date().toISOString().split('T')[0];
@@ -196,6 +231,18 @@ async function main() {
 
         } catch (error) {
             console.error(`Failed to update ${symbol}:`, error);
+        }
+    }
+
+    // --- Macro Data Sync (Buffett Indicator) ---
+    const macroData = await fetchBuffettIndicator();
+    if (macroData) {
+        try {
+            const macroRef = doc(db, "macro", "latest");
+            await setDoc(macroRef, macroData);
+            console.log("Successfully synced Macro Data to Firestore:", macroData);
+        } catch (error) {
+            console.error("Failed to update Macro Data:", error);
         }
     }
 

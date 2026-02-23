@@ -23,8 +23,9 @@ jobs:
         working-directory: ./scripts
         run: npm install
 
-      - name: Descargar Alpha Vantage y Actualizar Nube
+      - name: Descargar API y Actualizar Nube
         working-directory: ./scripts
         env:
-          API_KEY: ${{ secrets.API_KEY }} # Usa la clave que ya tenías guardada en GitHub
+          API_KEY: ${{ secrets.API_KEY }} 
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: node update-data.js

@@ -139,6 +139,7 @@ const realDataService = new RealDataService();
 // Global container state
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
+let globalMacroData = null; // Macroeconomic data (Buffett Indicator)
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
@@ -177,6 +178,7 @@ async function initDashboard() {
         refreshUI(); // Re-render sorted list
         renderMarketStatus(); // Actualizar contador de API
         renderHeatmap(); // Update Heatmap
+        renderBuffettIndicator(); // Update Buffett Indicator
     };
 
     const handleProgress = (msg) => {
@@ -184,8 +186,14 @@ async function initDashboard() {
         console.log("Progress:", msg);
     };
 
+    const handleMacroUpdate = (macroData) => {
+        globalMacroData = macroData;
+        renderBuffettIndicator();
+    };
+
     if (realDataService) {
         await realDataService.loadStocks(handleStockUpdate, handleProgress);
+        await realDataService.loadMacroIndicator(handleMacroUpdate);
     } else {
         container.innerHTML = "Error: Service not found. Check realData.js";
     }
@@ -529,4 +537,58 @@ function renderHeatmap() {
         block.title = `${stock.name}: $${stock.price}`;
         heatmapContainer.appendChild(block);
     });
+}
+
+function renderBuffettIndicator() {
+    const container = document.getElementById('buffettContainer');
+    if (!container) return;
+
+    let buffettValue = 195.4;
+    let extraInfo = "Mide la Capitalización Total del Mercado de EE.UU. en relación con su PIB. <br><em>Valor de referencia estimado.</em>";
+
+    if (globalMacroData && globalMacroData.buffettIndicator) {
+        buffettValue = globalMacroData.buffettIndicator;
+        const formattedDate = new Date(globalMacroData.lastUpdated).toLocaleDateString();
+        extraInfo = `Cap. Total de Mercado ($${globalMacroData.marketCap}B) rel. a PIB de EE.UU. ($${globalMacroData.gdp}B). <br><em>Actualizado: ${formattedDate} (Fuente: FRED)</em>`;
+    }
+
+    let color = '';
+    let statusText = '';
+
+    if (buffettValue < 75) {
+        statusText = 'Significativamente Infravalorado';
+        color = 'var(--accent-green)';
+    } else if (buffettValue < 90) {
+        statusText = 'Ligeramente Infravalorado';
+        color = 'var(--accent-green)';
+    } else if (buffettValue < 115) {
+        statusText = 'Justamente Valorado';
+        color = 'var(--text-primary)';
+    } else if (buffettValue < 140) {
+        statusText = 'Ligeramente Sobrevalorado';
+        color = 'var(--accent-red)';
+    } else {
+        statusText = 'Significativamente Sobrevalorado';
+        color = 'var(--accent-red)';
+    }
+
+    // Calcula el porcentaje visual para la barra (min 50%, max 250%)
+    let fillPercentage = ((buffettValue - 50) / (250 - 50)) * 100;
+    fillPercentage = Math.max(0, Math.min(100, fillPercentage));
+
+    container.innerHTML = `
+        <div class="buffett-status" style="color: ${color}">${statusText}</div>
+        <div class="buffett-value" style="color: ${color}">${buffettValue}%</div>
+        <div class="buffett-bar-bg">
+            <div class="buffett-bar-fill" style="width: ${fillPercentage}%; background-color: ${color};"></div>
+        </div>
+        <div class="buffett-labels">
+            <span>Infravalorado</span>
+            <span>Justo</span>
+            <span>Sobrevalorado</span>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 1rem; text-align: center; max-width: 80%;">
+            ${extraInfo}
+        </p>
+    `;
 }
