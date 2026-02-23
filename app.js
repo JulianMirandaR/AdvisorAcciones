@@ -145,24 +145,9 @@ let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
 
 
 function renderMarketStatus() {
-    // Estado neutral por defecto o basado en fecha
     const today = new Date().toLocaleDateString();
 
-    let usageInfo = "";
-    if (realDataService) {
-        const usage = realDataService.getDailyUsage();
-        const limit = 25; // Límite gratuito aproximado
-
-        let color = 'var(--accent-green)';
-        let statusText = `Peticiones API Hoy: <strong>${usage}</strong> / ${limit}`;
-
-        if (usage >= limit || realDataService.limitReached) {
-            color = 'var(--accent-red)';
-            statusText = `⚠️ Límite de API Alcanzado (${usage}/${limit})`;
-        }
-
-        usageInfo = `<br><span style="font-size: 0.8rem; color: ${color};">${statusText}</span>`;
-    }
+    let usageInfo = `<br><span style="font-size: 0.8rem; color: var(--accent-green);">Actualización de precios automática desde la nube activa</span>`;
 
     marketStatus.innerHTML = `
         <span class="status-indicator status-up"></span>
@@ -171,7 +156,7 @@ function renderMarketStatus() {
             ${usageInfo}
         </div>
     `;
-    marketStatus.style.borderColor = (realDataService && realDataService.limitReached) ? 'var(--accent-red)' : 'var(--text-primary)';
+    marketStatus.style.borderColor = 'var(--text-primary)';
 }
 
 async function initDashboard() {
