@@ -1,6 +1,6 @@
 // Servicio para obtener datos desde Firebase (Los datos son actualizados diariamente por el backend / GitHub Actions)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-import { getFirestore, collection, query, orderBy, limit, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -28,15 +28,21 @@ export class RealDataService {
 
     async getLatestFirestoreData() {
         try {
-            // Obtenemos el último documento guardado en la colección "stocks" (ordenado por nombre que es la fecha 'YYYY-MM-DD')
-            const q = query(collection(this.db, "stocks"), orderBy("__name__", "desc"), limit(1));
-            const querySnapshot = await getDocs(q);
+            // Intentar obtener el documento de hoy, si no, el de ayer, hasta 7 días atrás
+            // para no requerir un índice compuesto o descendente en __name__ que rompe la app
+            for (let i = 0; i < 7; i++) {
+                const d = new Date();
+                d.setUTCDate(d.getUTCDate() - i);
+                const dateStr = d.toISOString().split('T')[0];
 
-            if (!querySnapshot.empty) {
-                return querySnapshot.docs[0].data(); // Returns object { AAPL: {...}, MSFT: {...} }
-            } else {
-                return null;
+                const docRef = doc(this.db, "stocks", dateStr);
+                const docSnap = await getDoc(docRef);
+
+                if (docSnap.exists()) {
+                    return docSnap.data();
+                }
             }
+            return null;
         } catch (e) {
             throw e;
         }
