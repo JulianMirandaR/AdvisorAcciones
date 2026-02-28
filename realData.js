@@ -133,4 +133,25 @@ export class RealDataService {
             console.error("Firestore Macro Read Error:", e);
         }
     }
+
+    // Método para cargar historial de CCL
+    async loadCclHistory(onHistoryLoaded) {
+        const cacheKey = `ccl_history_cache`;
+        try {
+            const currentCache = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+            if (currentCache) onHistoryLoaded(currentCache);
+        } catch (e) { console.error("Error reading CCL cache", e); }
+
+        try {
+            const docRef = doc(this.db, "macro", "ccl_history");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                localStorage.setItem(cacheKey, JSON.stringify(data));
+                onHistoryLoaded(data);
+            }
+        } catch (e) {
+            console.error("Firestore CCL History Read Error:", e);
+        }
+    }
 }

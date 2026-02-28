@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,6 +13,7 @@
     <!-- Technical Indicators Library for calculating SMA, RSI, MACD on the client side -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/technicalindicators/3.1.0/index.browser.js"></script>
 </head>
+
 <body>
     <div class="app-container">
         <header>
@@ -23,38 +25,55 @@
             <!-- Market trend will be injected here -->
         </div>
 
-        <!-- Indicador Buffett Section -->
-        <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 1rem;">Indicador Buffett (Macroeconómico)</h4>
-        <div id="buffettContainer" class="buffett-container">
-            <!-- Injected by app.js -->
-        </div>
+        <!-- Main Dashboard Layout: Content Left, Sidebar Right -->
+        <div class="dashboard-top-section">
+            <div class="dashboard-main">
+                <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 1rem;">Mapa de Calor del
+                    Mercado</h4>
+                <div id="marketHeatmap" class="heatmap-container"></div>
 
-        <!-- Heatmap Section -->
-        <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 1rem;">Mapa de Calor del Mercado</h4>
-        <div id="marketHeatmap" class="heatmap-container"></div>
+                <div class="tabs">
+                    <button class="tab-btn active" data-term="short">Corto Plazo</button>
+                    <button class="tab-btn" data-term="long">Largo Plazo</button>
+                </div>
 
-        <div class="tabs">
-            <button class="tab-btn active" data-term="short">Corto Plazo</button>
-            <button class="tab-btn" data-term="long">Largo Plazo</button>
-        </div>
+                <div class="controls-container">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Buscar acción (ej. AAPL)...">
+                    </div>
+                    <div class="filters">
+                        <button class="filter-btn active" data-filter="all">Todas</button>
+                        <button class="filter-btn" data-filter="buy">Comprar</button>
+                        <button class="filter-btn" data-filter="hold">Mantener</button>
+                        <button class="filter-btn" data-filter="sell">Vender</button>
+                        <button class="filter-btn" data-filter="favorites">⭐ Favoritas</button>
+                    </div>
+                </div>
 
-        <div class="controls-container">
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Buscar acción (ej. AAPL)...">
+                <main id="recommendations-container" class="grid-container">
+                    <!-- Stock cards will be injected here -->
+                </main>
             </div>
-            <div class="filters">
-                <button class="filter-btn active" data-filter="all">Todas</button>
-                <button class="filter-btn" data-filter="buy">Comprar</button>
-                <button class="filter-btn" data-filter="hold">Mantener</button>
-                <button class="filter-btn" data-filter="sell">Vender</button>
-                <button class="filter-btn" data-filter="favorites">⭐ Favoritas</button>
+
+            <div class="dashboard-sidebar">
+                <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 0.5rem;">Datos Macro</h4>
+
+                <div id="buffettContainer" class="buffett-container">
+                    <!-- Injected by app.js -->
+                </div>
+
+                <div class="macro-card" id="cclContainer">
+                    <div class="macro-title">Dólar CCL</div>
+                    <div class="macro-value" id="cclValue">Cargando...</div>
+                    <div class="ccl-recommendation" id="cclRecommendation"
+                        style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;"></div>
+                    <div class="chart-wrapper" style="height: 120px; width: 100%;">
+                        <canvas id="cclChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <main id="recommendations-container" class="grid-container">
-            <!-- Stock cards will be injected here -->
-        </main>
-        
         <!-- Modal for details -->
         <div id="stockModal" class="modal">
             <div class="modal-content">
@@ -66,4 +85,5 @@
     <script type="module" src="realData.js"></script>
     <script type="module" src="app.js"></script>
 </body>
+
 </html>

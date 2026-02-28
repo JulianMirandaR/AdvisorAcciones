@@ -38,9 +38,9 @@ body {
 }
 
 .app-container {
-    max-width: 1200px;
+    max-width: 1550px;
     margin: 0 auto;
-    padding: 2rem;
+    padding: 2rem 1rem;
 }
 
 header {
@@ -444,23 +444,88 @@ header h1 {
     color: var(--text-primary);
 }
 
-/* --- Indicador Buffett --- */
-.buffett-container {
+/* --- Dashboard Layout --- */
+.dashboard-top-section {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 2rem;
+    margin-bottom: 2rem;
+    align-items: flex-start;
+}
+
+.dashboard-main {
+    flex: 1 1 80%;
+    min-width: 300px;
+}
+
+.dashboard-sidebar {
+    /* Thin right sidebar */
+    flex: 0 0 250px;
+    min-width: 250px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    position: sticky;
+    top: 2rem;
+}
+
+.macro-card {
     background-color: var(--card-bg);
     border-radius: 12px;
-    padding: 1.5rem;
+    padding: 1rem;
     border: 1px solid var(--border-color);
-    margin-bottom: 2rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.macro-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.macro-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.macro-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* --- Indicador Buffett --- */
+.buffett-container {
+    background-color: var(--card-bg);
+    border-radius: 12px;
+    padding: 1.5rem 1rem;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.buffett-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
 }
 
 .buffett-value {
-    font-size: 2.5rem;
+    font-size: 2rem;
     font-weight: 700;
-    margin: 0.5rem 0;
+    margin: 0.5rem 0 0.2rem 0;
 }
 
 .buffett-status {

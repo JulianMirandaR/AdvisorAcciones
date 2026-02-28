@@ -26,8 +26,8 @@ function analyzeStock(data, term) {
             score += 2;
             addReason(`Precio sobre ${maLabel} (Tendencia Corto Plazo Alcista)`, "positive", 10);
         } else {
-            score -= 2;
-            addReason(`Precio bajo ${maLabel} (Tendencia Corto Plazo Bajista)`, "negative", 10);
+            score -= 3; // Castigo mayor si rompe la media de corto plazo
+            addReason(`Precio bajo ${maLabel} (Tendencia Corto Plazo Bajista - ALERTA)`, "negative", 10);
         }
     } else {
         // Largo plazo: SMA 200
@@ -35,8 +35,8 @@ function analyzeStock(data, term) {
             score += 3;
             addReason("Precio sobre SMA 200 (Tendencia Largo Plazo Alcista)", "positive", 10);
         } else {
-            score -= 3;
-            addReason("Precio bajo SMA 200 (Tendencia Largo Plazo Bajista)", "negative", 10);
+            score -= 4; // Castigo mayor si pierde soporte histórico
+            addReason("Precio bajo SMA 200 (Tendencia Largo Plazo Bajista - PELIGRO)", "negative", 10);
         }
     }
 
@@ -44,7 +44,7 @@ function analyzeStock(data, term) {
     if (data.rsi < 30) {
         score += 2;
         addReason(`RSI en ${data.rsi} (Sobreventa - Posible Rebote)`, "positive", 8);
-    } else if (data.rsi > 70) {
+    } else if (data.rsi > 65) { // Bajado de 70 a 65 para alertas más tempranas
         score -= 2;
         addReason(`RSI en ${data.rsi} (Sobrecompra - Corrección Probable)`, "negative", 8);
     } else {
@@ -67,8 +67,8 @@ function analyzeStock(data, term) {
             score += 1;
             addReason("Volumen alto confirmando subida", "positive", 5);
         } else {
-            score -= 1;
-            addReason("Volumen alto confirmando bajada", "negative", 5);
+            score -= 2; // Más peso a caídas con volumen
+            addReason("Volumen alto confirmando bajada (ALERTA)", "negative", 5);
         }
     } else {
         // Volumen bajo
@@ -100,6 +100,9 @@ function analyzeStock(data, term) {
     if (distToSupport / priceVal < 0.02) {
         score += 2;
         addReason(`Precio probando Soporte en ${data.support}`, "positive", 9);
+    } else if (priceVal < parseFloat(data.support)) {
+        score -= 3; // Ruptura de soporte
+        addReason(`Rotura del Soporte en ${data.support} (Confirmación Bajista)`, "negative", 9);
     } else {
         addReason(`Lejos de zona de soporte importante`, "negative", 2);
     }
@@ -109,7 +112,10 @@ function analyzeStock(data, term) {
         score += 1;
         addReason(`Fundamental: PER bajo (${data.peRatio})`, "positive", 4);
     } else {
-        if (data.peRatio !== 'N/A') {
+        if (data.peRatio !== 'N/A' && parseFloat(data.peRatio) > 35) {
+            score -= 1; // Penalización por sobrevaloración fundamental
+            addReason(`Fundamental: PER muy alto (${data.peRatio})`, "negative", 4);
+        } else if (data.peRatio !== 'N/A') {
             addReason(`Fundamental: PER alto o promedio`, "negative", 2);
         }
     }
@@ -117,8 +123,8 @@ function analyzeStock(data, term) {
     // Evaluación Final
     if (score >= 4) signal = "COMPRA FUERTE";
     else if (score >= 2) signal = "COMPRAR";
-    else if (score <= -4) signal = "VENTA FUERTE";
-    else if (score <= -2) signal = "VENDER";
+    else if (score <= -3) signal = "VENTA FUERTE"; // Ajustado para que sea más fácil de alcanzar
+    else if (score <= -1) signal = "VENDER";      // Ajustado de <= -2 a <= -1
     else signal = "MANTENER";
 
     // Ordenar razones por importancia
@@ -140,6 +146,7 @@ const realDataService = new RealDataService();
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
 let globalMacroData = null; // Macroeconomic data (Buffett Indicator)
+let globalCclHistory = null; // Historical CCL Data
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
@@ -189,11 +196,18 @@ async function initDashboard() {
     const handleMacroUpdate = (macroData) => {
         globalMacroData = macroData;
         renderBuffettIndicator();
+        renderCclIndicator();
+    };
+
+    const handleCclHistoryUpdate = (historicalData) => {
+        globalCclHistory = historicalData;
+        renderCclIndicator();
     };
 
     if (realDataService) {
         await realDataService.loadStocks(handleStockUpdate, handleProgress);
         await realDataService.loadMacroIndicator(handleMacroUpdate);
+        await realDataService.loadCclHistory(handleCclHistoryUpdate);
     } else {
         container.innerHTML = "Error: Service not found. Check realData.js";
     }
@@ -577,7 +591,8 @@ function renderBuffettIndicator() {
     fillPercentage = Math.max(0, Math.min(100, fillPercentage));
 
     container.innerHTML = `
-        <div class="buffett-status" style="color: ${color}">${statusText}</div>
+        <div class="macro-title">Indicador Buffett</div>
+        <div class="buffett-status" style="color: ${color}; font-size: 0.85rem; text-align: center; margin-bottom: 0.5rem; line-height: 1.2;">${statusText}</div>
         <div class="buffett-value" style="color: ${color}">${buffettValue}%</div>
         <div class="buffett-bar-bg">
             <div class="buffett-bar-fill" style="width: ${fillPercentage}%; background-color: ${color};"></div>
@@ -591,4 +606,96 @@ function renderBuffettIndicator() {
             ${extraInfo}
         </p>
     `;
+}
+
+function renderCclIndicator() {
+    const container = document.getElementById('cclContainer');
+    const valueEl = document.getElementById('cclValue');
+    const recEl = document.getElementById('cclRecommendation');
+    if (!container || !valueEl || !recEl) return;
+
+    if (!globalMacroData || !globalMacroData.ccl) {
+        valueEl.textContent = "No Data";
+        return;
+    }
+
+    const currentCcl = globalMacroData.ccl;
+    valueEl.textContent = `$${currentCcl.toFixed(2)}`;
+
+    let historyDates = [];
+    let historyPrices = [];
+
+    // We parse the history data
+    if (globalCclHistory) {
+        // Sort by date key
+        const sortedDates = Object.keys(globalCclHistory).sort();
+        historyDates = sortedDates.slice(-30); // Last 30 points max
+        historyPrices = historyDates.map(d => globalCclHistory[d]);
+    }
+
+    // Add current price if today is not in history yet
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (historyDates.length === 0 || historyDates[historyDates.length - 1] !== todayStr) {
+        historyDates.push(todayStr);
+        historyPrices.push(currentCcl);
+    }
+
+    let recommendationHTML = `<span style="color: var(--text-secondary)">Pocos datos históricos para recomendar.</span>`;
+
+    // Only make recommendations if we have at least exactly 1 point of history or more? Better need average.
+    // For now, let's make a rudimentary avg since we just started collecting data.
+    if (historyPrices.length > 2) {
+        const avgCcl = historyPrices.reduce((a, b) => a + b, 0) / historyPrices.length;
+
+        if (currentCcl < avgCcl * 0.98) {
+            // CCL is more than 2% below its recent average
+            recommendationHTML = `<span style="color: var(--accent-green)">CCL BAJO (Favorece compra de CEDEARs)</span>`;
+        } else if (currentCcl > avgCcl * 1.02) {
+            // CCL is more than 2% above its recent average
+            recommendationHTML = `<span style="color: var(--accent-red)">CCL ALTO (Riesgo en CEDEARs, favorece Locales)</span>`;
+            // In a real scenario we might adjust this logic heavily
+        } else {
+            recommendationHTML = `<span style="color: var(--text-primary)">CCL Estable (En Promedio)</span>`;
+        }
+    } else {
+        recommendationHTML = `<span style="color: var(--text-secondary)">Empezando a recolectar historial.</span>`;
+    }
+
+    recEl.innerHTML = recommendationHTML;
+
+    // Render Chart
+    const ctx = document.getElementById('cclChart').getContext('2d');
+
+    if (chartInstances['cclChart']) {
+        chartInstances['cclChart'].destroy();
+    }
+
+    chartInstances['cclChart'] = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: historyDates.map(d => d.slice(5)), // MM-DD
+            datasets: [{
+                label: 'CCL',
+                data: historyPrices,
+                borderColor: '#0ea5e9',
+                backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                borderWidth: 2,
+                pointRadius: 2,
+                fill: true,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: true }
+            },
+            scales: {
+                x: { display: true, ticks: { font: { size: 8 } } },
+                y: { display: false } // Hide Y axis to keep it clean in sidebar
+            }
+        }
+    });
+
 }

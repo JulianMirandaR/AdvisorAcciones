@@ -111,6 +111,27 @@ async function fetchBuffettIndicator() {
     }
 }
 
+async function fetchDolarCCL() {
+    console.log("Fetching Dólar CCL from DolarAPI...");
+    try {
+        const url = 'https://dolarapi.com/v1/dolares/contadoconliqui';
+        const res = await fetch(url);
+        const data = await res.json();
+
+        // DolarAPI returns: { compra, venta, casa, nombre, moneda, fechaActualizacion }
+        // We will use the 'venta' price as the reference for CEDEARs
+        const cclValue = parseFloat(data.venta);
+
+        return {
+            ccl: cclValue,
+            lastUpdated: data.fechaActualizacion || new Date().toISOString()
+        };
+    } catch (error) {
+        console.error("Failed to fetch Dólar CCL:", error);
+        return null;
+    }
+}
+
 async function main() {
     const today = new Date().toISOString().split('T')[0];
     console.log(`Starting data sync for ${today}...`);
@@ -234,13 +255,31 @@ async function main() {
         }
     }
 
-    // --- Macro Data Sync (Buffett Indicator) ---
+    // --- Macro Data Sync (Buffett Indicator & Dólar CCL) ---
     const macroData = await fetchBuffettIndicator();
-    if (macroData) {
+    const cclData = await fetchDolarCCL();
+
+    let combinedMacro = {};
+    if (macroData) combinedMacro = { ...macroData };
+    if (cclData) combinedMacro.ccl = cclData.ccl;
+
+    // Always store the last update time
+    combinedMacro.lastUpdated = new Date().toISOString();
+
+    if (Object.keys(combinedMacro).length > 1) { // More than just lastUpdated
         try {
             const macroRef = doc(db, "macro", "latest");
-            await setDoc(macroRef, macroData);
-            console.log("Successfully synced Macro Data to Firestore:", macroData);
+            await setDoc(macroRef, combinedMacro, { merge: true });
+            console.log("Successfully synced Macro Data to Firestore:", combinedMacro);
+
+            // Si queremos guardar el historial del CCL para el gráfico
+            if (cclData && cclData.ccl) {
+                const cclHistoryRef = doc(db, "macro", "ccl_history");
+                await setDoc(cclHistoryRef, {
+                    [today]: cclData.ccl
+                }, { merge: true });
+                console.log(`Successfully saved CCL history point for ${today}: $${cclData.ccl}`);
+            }
         } catch (error) {
             console.error("Failed to update Macro Data:", error);
         }
