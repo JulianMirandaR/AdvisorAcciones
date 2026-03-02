@@ -17,6 +17,17 @@ function analyzeStock(data, term) {
         reasons.push({ text, type, weight });
     };
 
+    // 0. Macro Context (VIX)
+    if (globalMacroData && globalMacroData.vix) {
+        if (globalMacroData.vix > 30) {
+            score -= 2; // Penalize buy setups during extreme panic
+            addReason(`Macro: VIX Extremo (${globalMacroData.vix.toFixed(2)}). Riesgo de alta volatilidad.`, "negative", 8);
+        } else if (globalMacroData.vix < 20) {
+            score += 1; // Market is calm
+            addReason(`Macro: VIX Bajo (${globalMacroData.vix.toFixed(2)}). Entorno favorable.`, "positive", 3);
+        }
+    }
+
     // 1. Analisis de Medias Moviles (Alta Importancia)
     if (term === 'short') {
         const shortMa = data.ema20 || data.sma50;
@@ -50,6 +61,28 @@ function analyzeStock(data, term) {
     } else {
         // RSI Neutro
         addReason(`RSI en ${data.rsi} (Zona Neutral - Sin señal clara)`, "negative", 2);
+    }
+
+    // 2.2 Bollinger Bands (High Importance)
+    if (data.bollinger && currentTerm === 'short') { // Mostly useful short term
+        if (parseFloat(data.price) < parseFloat(data.bollinger.lower)) {
+            score += 2;
+            addReason(`Precio cruzó Banda Inferior Bollinger (Sobrevendido Extremo)`, "positive", 9);
+        } else if (parseFloat(data.price) > parseFloat(data.bollinger.upper)) {
+            score -= 2; // Penalización adicional por estar fuera de bandas
+            addReason(`Precio cruzó Banda Superior Bollinger (Sobrecomprado Extremo)`, "negative", 9);
+        }
+    }
+
+    // 2.3 Stochastic (High Importance)
+    if (data.stochastic) {
+        if (parseFloat(data.stochastic.k) < 20 && parseFloat(data.stochastic.d) < 20) {
+            score += 1;
+            addReason(`Estocástico < 20 (Señal de Compra / Sobrevendido)`, "positive", 7);
+        } else if (parseFloat(data.stochastic.k) > 80 && parseFloat(data.stochastic.d) > 80) {
+            score -= 1;
+            addReason(`Estocástico > 80 (Señal de Venta / Sobrecomprado)`, "negative", 7);
+        }
     }
 
     // 3. MACD
@@ -117,6 +150,21 @@ function analyzeStock(data, term) {
             addReason(`Fundamental: PER muy alto (${data.peRatio})`, "negative", 4);
         } else if (data.peRatio !== 'N/A') {
             addReason(`Fundamental: PER alto o promedio`, "negative", 2);
+        }
+    }
+
+    if (data.roe && data.roe !== 'N/A' && parseFloat(data.roe) > 15) {
+        score += 1;
+        addReason(`Fundamental: ROE excelente (${data.roe}%)`, "positive", 5);
+    }
+
+    if (data.beta && data.beta !== 'N/A') {
+        if (globalMacroData && globalMacroData.vix > 25 && parseFloat(data.beta) > 1.5) {
+            score -= 1; // Penalizar alto Beta (riesgo) cuando el VIX está alto
+            addReason(`Fundamental: Beta Alto (${data.beta}) en mercado inestable`, "negative", 6);
+        } else if (parseFloat(data.beta) < 0.8) {
+            score += 1; // Seguridad aparente en periodos inestables
+            addReason(`Fundamental: Acción Defensiva (Beta ${data.beta})`, "positive", 3);
         }
     }
 
@@ -197,6 +245,7 @@ async function initDashboard() {
         globalMacroData = macroData;
         renderBuffettIndicator();
         renderCclIndicator();
+        renderNewMacroIndicators();
     };
 
     const handleCclHistoryUpdate = (historicalData) => {
@@ -270,7 +319,7 @@ function createCardHTML(item) {
 
     let badgeClass = 'hold-badge';
     if (analysis.signal.includes('COMPRA')) badgeClass = 'buy-badge';
-    if (analysis.signal.includes('VENTA')) badgeClass = 'sell-badge';
+    if (analysis.signal.includes('VENTA') || analysis.signal.includes('VENDER')) badgeClass = 'sell-badge';
 
     const changeClass = parseFloat(data.change) >= 0 ? 'change-up' : 'change-down';
     const changeSign = parseFloat(data.change) >= 0 ? '+' : '';
@@ -284,15 +333,15 @@ function createCardHTML(item) {
     if (data.peRatio && data.peRatio !== 'N/A') {
         fundamentalHtml += `
         <div class="analysis-item">
-            <span class="analysis-label">PER Ratio</span>
-            <span class="analysis-value">${data.peRatio}</span>
+            <span class="analysis-label">PER Ratio / EPS</span>
+            <span class="analysis-value">${data.peRatio} / $${data.epsGrowth !== 'N/A' ? data.epsGrowth : '--'}</span>
         </div>`;
     }
-    if (data.epsGrowth && data.epsGrowth !== 'N/A') {
+    if (data.beta && data.beta !== 'N/A') {
         fundamentalHtml += `
         <div class="analysis-item">
-            <span class="analysis-label">EPS (Ganancia)</span>
-            <span class="analysis-value">$${data.epsGrowth}</span>
+            <span class="analysis-label">Beta / ROE</span>
+            <span class="analysis-value">${data.beta} / ${data.roe}%</span>
         </div>`;
     }
 
@@ -699,3 +748,41 @@ function renderCclIndicator() {
     });
 
 }
+
+function renderNewMacroIndicators() {
+    const vixContainer = document.getElementById('vixValue');
+    const vixRec = document.getElementById('vixRecommendation');
+    const us10yContainer = document.getElementById('us10yValue');
+    const us10yRec = document.getElementById('us10yRecommendation');
+
+    if (!globalMacroData) return;
+
+    if (globalMacroData.vix) {
+        vixContainer.textContent = globalMacroData.vix.toFixed(2);
+        if (globalMacroData.vix > 30) {
+            vixContainer.style.color = 'var(--accent-red)';
+            vixRec.innerHTML = `<span style="color: var(--accent-red)">Pánico: Alto Riesgo</span>`;
+        } else if (globalMacroData.vix < 20) {
+            vixContainer.style.color = 'var(--accent-green)';
+            vixRec.innerHTML = `<span style="color: var(--accent-green)">Calma: Riesgo Bajo</span>`;
+        } else {
+            vixContainer.style.color = 'var(--text-primary)';
+            vixRec.innerHTML = `<span style="color: var(--text-primary)">Normal</span>`;
+        }
+    }
+
+    if (globalMacroData.us10y) {
+        us10yContainer.textContent = `${globalMacroData.us10y.toFixed(2)}%`;
+        if (globalMacroData.us10y > 4.5) {
+            us10yContainer.style.color = 'var(--accent-red)';
+            us10yRec.innerHTML = `<span style="color: var(--accent-red)">Presión (Renta Variable sufre)</span>`;
+        } else if (globalMacroData.us10y < 3.5) {
+            us10yContainer.style.color = 'var(--accent-green)';
+            us10yRec.innerHTML = `<span style="color: var(--accent-green)">Dinamismo de Capital</span>`;
+        } else {
+            us10yContainer.style.color = 'var(--text-primary)';
+            us10yRec.innerHTML = `<span style="color: var(--text-primary)">Estable</span>`;
+        }
+    }
+}
+

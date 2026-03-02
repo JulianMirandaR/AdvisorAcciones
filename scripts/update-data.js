@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc } from "firebase/firestore";
-import { SMA, EMA, RSI, MACD } from "technicalindicators";
+import { SMA, EMA, RSI, MACD, BollingerBands, Stochastic } from "technicalindicators";
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -53,30 +53,30 @@ const activeStocks = [
 ];
 
 const staticFundamentals = {
-    'AAPL': { peRatio: 34.66, eps: 7.91 },
-    'MSFT': { peRatio: 26.06, eps: 15.99 },
-    'GOOGL': { peRatio: 29.73, eps: 10.91 },
-    'AMZN': { peRatio: 28.85, eps: 7.29 },
-    'TSLA': { peRatio: 386.41, eps: 1.08 },
-    'NVDA': { peRatio: 46.01, eps: 4.03 },
-    'META': { peRatio: 28.15, eps: 23.50 },
-    'NFLX': { peRatio: 32.24, eps: 2.53 },
-    'JPM': { peRatio: 16.12, eps: 20.01 },
-    'V': { peRatio: 30.54, eps: 10.65 },
-    'MA': { peRatio: 34.16, eps: 15.67 },
-    'BAC': { peRatio: 14.76, eps: 3.83 },
-    'KO': { peRatio: 26.08, eps: 3.03 },
-    'PEP': { peRatio: 32.35, eps: 5.27 },
-    'WMT': { peRatio: 44.95, eps: 2.87 },
-    'MCD': { peRatio: 27.91, eps: 11.72 },
-    'NKE': { peRatio: 37.60, eps: 1.70 },
-    'XOM': { peRatio: 22.28, eps: 6.69 },
-    'CVX': { peRatio: 27.16, eps: 6.66 },
-    'JNJ': { peRatio: 21.72, eps: 11.05 },
-    'PFE': { peRatio: 15.83, eps: 1.72 },
-    'AMD': { peRatio: 81.51, eps: 2.65 },
-    'INTC': { peRatio: 'N/A', eps: -0.27 },
-    'DIS': { peRatio: 15.96, eps: 6.81 }
+    'AAPL': { peRatio: 34.66, eps: 7.91, beta: 1.25, roe: 147.2 },
+    'MSFT': { peRatio: 26.06, eps: 15.99, beta: 0.90, roe: 38.5 },
+    'GOOGL': { peRatio: 29.73, eps: 10.91, beta: 1.05, roe: 23.6 },
+    'AMZN': { peRatio: 28.85, eps: 7.29, beta: 1.15, roe: 18.2 },
+    'TSLA': { peRatio: 386.41, eps: 1.08, beta: 2.15, roe: 21.0 },
+    'NVDA': { peRatio: 46.01, eps: 4.03, beta: 1.70, roe: 69.2 },
+    'META': { peRatio: 28.15, eps: 23.50, beta: 1.10, roe: 28.4 },
+    'NFLX': { peRatio: 32.24, eps: 2.53, beta: 1.30, roe: 15.6 },
+    'JPM': { peRatio: 16.12, eps: 20.01, beta: 1.11, roe: 16.5 },
+    'V': { peRatio: 30.54, eps: 10.65, beta: 0.96, roe: 45.1 },
+    'MA': { peRatio: 34.16, eps: 15.67, beta: 1.08, roe: 140.5 },
+    'BAC': { peRatio: 14.76, eps: 3.83, beta: 1.35, roe: 11.2 },
+    'KO': { peRatio: 26.08, eps: 3.03, beta: 0.58, roe: 41.5 },
+    'PEP': { peRatio: 32.35, eps: 5.27, beta: 0.55, roe: 52.8 },
+    'WMT': { peRatio: 44.95, eps: 2.87, beta: 0.51, roe: 18.9 },
+    'MCD': { peRatio: 27.91, eps: 11.72, beta: 0.70, roe: -34.5 },
+    'NKE': { peRatio: 37.60, eps: 1.70, beta: 1.12, roe: 35.8 },
+    'XOM': { peRatio: 22.28, eps: 6.69, beta: 1.15, roe: 16.2 },
+    'CVX': { peRatio: 27.16, eps: 6.66, beta: 1.10, roe: 12.8 },
+    'JNJ': { peRatio: 21.72, eps: 11.05, beta: 0.55, roe: 23.4 },
+    'PFE': { peRatio: 15.83, eps: 1.72, beta: 0.65, roe: 11.5 },
+    'AMD': { peRatio: 81.51, eps: 2.65, beta: 1.80, roe: 0.5 },
+    'INTC': { peRatio: 'N/A', eps: -0.27, beta: 1.25, roe: -1.2 },
+    'DIS': { peRatio: 15.96, eps: 6.81, beta: 1.35, roe: 2.5 }
 };
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -128,6 +128,34 @@ async function fetchDolarCCL() {
         };
     } catch (error) {
         console.error("Failed to fetch Dólar CCL:", error);
+        return null;
+    }
+}
+
+async function fetchVixAndTreasury() {
+    if (!FRED_API_KEY) return null;
+    console.log("Fetching Macro Data (VIX, US10Y) from FRED...");
+    try {
+        const vixUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=VIXCLS&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=1`;
+        const us10yUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=DGS10&api_key=${FRED_API_KEY}&file_type=json&sort_order=desc&limit=1`;
+
+        const vixRes = await fetch(vixUrl);
+        const vixData = await vixRes.json();
+        let vix = null;
+        if (vixData.observations && vixData.observations.length > 0 && vixData.observations[0].value !== ".") {
+            vix = parseFloat(vixData.observations[0].value);
+        }
+
+        const us10yRes = await fetch(us10yUrl);
+        const us10yData = await us10yRes.json();
+        let us10y = null;
+        if (us10yData.observations && us10yData.observations.length > 0 && us10yData.observations[0].value !== ".") {
+            us10y = parseFloat(us10yData.observations[0].value);
+        }
+
+        return { vix, us10y };
+    } catch (e) {
+        console.error("Failed to fetch VIX/US10Y:", e);
         return null;
     }
 }
@@ -201,6 +229,19 @@ async function main() {
             const macdData = MACD.calculate(macdInput);
             const latestMacd = macdData.length > 0 ? macdData[macdData.length - 1] : { MACD: 0, signal: 0, histogram: 0 };
 
+            const bbData = BollingerBands.calculate({ period: 20, values: closePrices, stdDev: 2 });
+            const latestBb = bbData.length > 0 ? bbData[bbData.length - 1] : { lower: 0, middle: 0, upper: 0 };
+
+            // Reverse arrays for stochastic are NOT needed because our closePrices are already chronological
+            const stochasticData = Stochastic.calculate({
+                high: prices.map(p => p.high),
+                low: prices.map(p => p.low),
+                close: closePrices,
+                period: 14,
+                signalPeriod: 3
+            });
+            const latestStoch = stochasticData.length > 0 ? stochasticData[stochasticData.length - 1] : { k: 50, d: 50 };
+
             const currentPrice = closePrices[closePrices.length - 1];
             const prevPrice = closePrices[closePrices.length - 2];
             const change = currentPrice - prevPrice;
@@ -232,6 +273,16 @@ async function main() {
                 resistance: resistance.toFixed(2),
                 peRatio: staticFundamentals[symbol] ? staticFundamentals[symbol].peRatio : 'N/A',
                 epsGrowth: staticFundamentals[symbol] ? staticFundamentals[symbol].eps : 'N/A',
+                beta: staticFundamentals[symbol] ? staticFundamentals[symbol].beta : 'N/A',
+                roe: staticFundamentals[symbol] ? staticFundamentals[symbol].roe : 'N/A',
+                bollinger: {
+                    upper: latestBb.upper.toFixed(2),
+                    lower: latestBb.lower.toFixed(2)
+                },
+                stochastic: {
+                    k: latestStoch.k.toFixed(2),
+                    d: latestStoch.d.toFixed(2)
+                },
                 patterns: [],
                 candles: [],
                 history: {
@@ -258,10 +309,12 @@ async function main() {
     // --- Macro Data Sync (Buffett Indicator & Dólar CCL) ---
     const macroData = await fetchBuffettIndicator();
     const cclData = await fetchDolarCCL();
+    const vixTreasuryData = await fetchVixAndTreasury();
 
     let combinedMacro = {};
     if (macroData) combinedMacro = { ...macroData };
     if (cclData) combinedMacro.ccl = cclData.ccl;
+    if (vixTreasuryData) combinedMacro = { ...combinedMacro, vix: vixTreasuryData.vix, us10y: vixTreasuryData.us10y };
 
     // Always store the last update time
     combinedMacro.lastUpdated = new Date().toISOString();
