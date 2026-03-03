@@ -23,8 +23,8 @@ function analyzeStock(data, term) {
             score -= 2; // Penalize buy setups during extreme panic
             addReason(`Macro: VIX Extremo (${globalMacroData.vix.toFixed(2)}). Riesgo de alta volatilidad.`, "negative", 8);
         } else if (globalMacroData.vix < 20) {
-            score += 1; // Market is calm
-            addReason(`Macro: VIX Bajo (${globalMacroData.vix.toFixed(2)}). Entorno favorable.`, "positive", 3);
+            // Se quitó: score += 1; (a petición del usuario, no influye en score de compra)
+            addReason(`Macro: VIX Bajo (${globalMacroData.vix.toFixed(2)}). Entorno favorable. (No suma puntos)`, "positive", 3);
         }
     }
 
@@ -606,7 +606,7 @@ function renderBuffettIndicator() {
     const container = document.getElementById('buffettContainer');
     if (!container) return;
 
-    let buffettValue = 195.4;
+    let buffettValue = "Cargando";
     let extraInfo = "Mide la Capitalización Total del Mercado de EE.UU. en relación con su PIB. <br><em>Valor de referencia estimado.</em>";
 
     if (globalMacroData && globalMacroData.buffettIndicator) {

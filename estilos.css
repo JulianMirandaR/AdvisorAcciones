@@ -467,6 +467,12 @@ header h1 {
     gap: 1.5rem;
     position: sticky;
     top: 2rem;
+    max-height: calc(100vh - 4rem);
+    /* Limit height to viewport minus padding */
+    overflow-y: auto;
+    /* Allow scrolling within the sidebar if contents overflow */
+    padding-right: 0.5rem;
+    /* Space for scrollbar */
 }
 
 .macro-card {
