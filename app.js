@@ -128,16 +128,21 @@ function analyzeStock(data, term) {
     }
 
     // 6. Soportes/Resistencias
-    const distToSupport = Math.abs(parseFloat(data.price) - parseFloat(data.support));
     const priceVal = parseFloat(data.price);
+    const distToSupport = Math.abs(priceVal - parseFloat(data.support));
+    const distToResist = Math.abs(parseFloat(data.resistance) - priceVal);
+
     if (distToSupport / priceVal < 0.02) {
         score += 2;
-        addReason(`Precio probando Soporte en ${data.support}`, "positive", 9);
+        addReason(`Precio probando Soporte en $${data.support}`, "positive", 9);
     } else if (priceVal < parseFloat(data.support)) {
         score -= 3; // Ruptura de soporte
-        addReason(`Rotura del Soporte en ${data.support} (Confirmación Bajista)`, "negative", 9);
+        addReason(`Rotura del Soporte en $${data.support} (Confirmación Bajista)`, "negative", 9);
+    } else if (distToResist / priceVal < 0.02 || priceVal >= parseFloat(data.resistance)) {
+        score -= 2; // Penaliza compras en máximos o resistencias
+        addReason(`Precio en Resistencia / Máximos ($${data.resistance}). Alto riesgo de recorte.`, "negative", 9);
     } else {
-        addReason(`Lejos de zona de soporte importante`, "negative", 2);
+        addReason(`En zona media (Sop: $${data.support} / Res: $${data.resistance})`, "negative", 2);
     }
 
     // 7. Fundamental
@@ -571,8 +576,8 @@ function renderHeatmap() {
 
     heatmapContainer.innerHTML = '';
 
-    // Sort by magnitude of change
-    const sortedByChange = [...globalStocksData].sort((a, b) => Math.abs(parseFloat(b.changePercent)) - Math.abs(parseFloat(a.changePercent)));
+    // Sort so positive comes first (highest positive down to largest negative)
+    const sortedByChange = [...globalStocksData].sort((a, b) => parseFloat(b.changePercent) - parseFloat(a.changePercent));
 
     sortedByChange.forEach(stock => {
         const change = parseFloat(stock.changePercent);
