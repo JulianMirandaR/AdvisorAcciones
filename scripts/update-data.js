@@ -286,11 +286,11 @@ async function main() {
                 patterns: [],
                 candles: [],
                 history: {
-                    dates: dates.slice(-60),
-                    prices: closePrices.slice(-60),
-                    sma50: sma50Data.slice(-60),
-                    ema20: ema20Data.slice(-60),
-                    sma200: sma200Data.slice(-60)
+                    dates: dates.slice(-250),
+                    prices: closePrices.slice(-250),
+                    sma50: sma50Data.slice(-250),
+                    ema20: ema20Data.slice(-250),
+                    sma200: sma200Data.slice(-250)
                 }
             };
 

@@ -189,6 +189,8 @@ function analyzeStock(data, term) {
 // --- UI Rendering ---
 
 const container = document.getElementById('recommendations-container');
+const portfolioContainer = document.getElementById('portfolio-container');
+const controlsContainer = document.querySelector('.controls-container');
 const tabs = document.querySelectorAll('.tab-btn');
 const marketStatus = document.getElementById('marketStatus');
 
@@ -203,6 +205,7 @@ let globalCclHistory = null; // Historical CCL Data
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
+let portfolio = JSON.parse(localStorage.getItem('advisor_portfolio') || '[]');
 
 
 function renderMarketStatus() {
@@ -271,7 +274,18 @@ function refreshUI() {
     // Si tenemos datos, limpiamos el "Loading..." inicial y renderizamos la tabla
     if (globalStocksData.length > 0) {
         container.innerHTML = '';
-        // Si quisieramos mantener un loader pequeñito arriba, podriamos, pero el usuario quiere ver "juntandose"
+    }
+
+    if (currentTerm === 'portfolio') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'block';
+        renderPortfolio();
+        return;
+    } else {
+        container.style.display = ''; // Restore to default CSS (grid)
+        controlsContainer.style.display = ''; // Restore flex
+        portfolioContainer.style.display = 'none';
     }
 
     // --- Filter & Search Logic ---
@@ -367,6 +381,7 @@ function createCardHTML(item) {
         <div class="price-section">
             <div class="current-price">$${data.price}</div>
             <div class="price-change ${changeClass}">${changeSign}${data.change} (${changeSign}${data.changePercent}%)</div>
+            <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: auto;">+ Portafolio</button>
         </div>
 
         <div class="analysis-grid">
@@ -433,7 +448,6 @@ filterBtns.forEach(btn => {
     });
 });
 
-// Watchlist Function globally accessible
 window.toggleWatchlist = (symbol, event) => {
     if (event) event.stopPropagation(); // prevent modal open if any
 
@@ -446,6 +460,128 @@ window.toggleWatchlist = (symbol, event) => {
     localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
     refreshUI();
 };
+
+window.removeFromPortfolio = (index) => {
+    portfolio.splice(index, 1);
+    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+    renderPortfolio();
+};
+
+window.addToPortfolioPrompt = (symbol) => {
+    const stockData = globalStocksData.find(s => s.symbol === symbol);
+    if (!stockData) return;
+
+    // We use a small timeout to avoid double click issues or modal triggers if any
+    setTimeout(() => {
+        const price = prompt(`Añadiendo ${symbol} al Portafolio\\nPrecio de Compra: (Ej: ${stockData.price})`, stockData.price);
+        if (price === null || isNaN(parseFloat(price))) return;
+
+        const qty = prompt(`Cantidad de Acciones de ${symbol}:`, '10');
+        if (qty === null || isNaN(parseFloat(qty))) return;
+
+        portfolio.push({
+            symbol: symbol,
+            price: parseFloat(price),
+            qty: parseFloat(qty)
+        });
+        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+        alert(`${symbol} añadida al portafolio exitosamente.`);
+    }, 50);
+};
+
+function renderPortfolio() {
+    portfolioContainer.innerHTML = '<h4>Mi Portafolio V1</h4>';
+
+    let totalValue = 0;
+    let totalInvestment = 0;
+
+    let tableHtml = `
+    <div style="overflow-x: auto;">
+    <table class="portfolio-table" style="width:100%; text-align:left; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem;">
+        <thead>
+            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
+                <th style="padding: 0.75rem;">Activo</th>
+                <th style="padding: 0.75rem;">Cant.</th>
+                <th style="padding: 0.75rem;">Base</th>
+                <th style="padding: 0.75rem;">Actual</th>
+                <th style="padding: 0.75rem;">%</th>
+                <th style="padding: 0.75rem;">P/L ($)</th>
+                <th style="padding: 0.75rem;">Señal</th>
+                <th style="padding: 0.75rem;"></th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    if (portfolio.length === 0) {
+        portfolioContainer.innerHTML += '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio está vacío. Añade acciones desde la lista principal clickeando en "+ Portafolio".</p>';
+        return;
+    }
+
+    portfolio.forEach((pos, index) => {
+        const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
+
+        const currentPrice = stockData ? parseFloat(stockData.price) : pos.price; // fallback if not found
+        const basePrice = parseFloat(pos.price);
+        const qty = parseFloat(pos.qty);
+
+        const inv = basePrice * qty;
+        const currentVal = currentPrice * qty;
+        const pl = currentVal - inv;
+        const plPct = inv > 0 ? (pl / inv) * 100 : 0;
+
+        totalInvestment += inv;
+        totalValue += currentVal;
+
+        const colorClass = pl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+        const sign = pl >= 0 ? '+' : '';
+
+        // Calculate Signal
+        let signalBadge = '<span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>';
+        if (stockData) {
+            const analysis = analyzeStock(stockData, 'short');
+            const sig = analysis.signal;
+
+            let bgClass = 'hold-badge';
+            if (sig.includes('COMPRA')) bgClass = 'buy-badge';
+            if (sig.includes('VENTA') || sig.includes('VENDER')) bgClass = 'sell-badge';
+
+            // Re-using styles from your CSS but making it smaller
+            signalBadge = `<span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>`;
+        }
+
+        tableHtml += `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 0.75rem; font-weight: bold;">${pos.symbol}</td>
+                <td style="padding: 0.75rem;">${qty}</td>
+                <td style="padding: 0.75rem;">$${basePrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">$${currentPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem; color: ${colorClass};">${sign}${plPct.toFixed(2)}%</td>
+                <td style="padding: 0.75rem; color: ${colorClass}; font-weight: bold;">${sign}$${pl.toFixed(2)}</td>
+                <td style="padding: 0.75rem; vertical-align: middle;">${signalBadge}</td>
+                <td style="padding: 0.75rem;"><button onclick="removeFromPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Eliminar">🗑️</button></td>
+            </tr>
+        `;
+    });
+
+    tableHtml += `</tbody></table></div>`;
+
+    // Summary
+    const totalPl = totalValue - totalInvestment;
+    const totalPlPct = totalInvestment > 0 ? (totalPl / totalInvestment) * 100 : 0;
+    const summaryColor = totalPl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+    const summarySign = totalPl >= 0 ? '+' : '';
+
+    const summaryHtml = `
+        <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Inversión Total</span><br><b style="font-size: 1.25rem;">$${totalInvestment.toFixed(2)}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Valor Actual</span><br><b style="font-size: 1.25rem;">$${totalValue.toFixed(2)}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Rendimiento Total</span><br><b style="color:${summaryColor}; font-size: 1.25rem;">${summarySign}$${totalPl.toFixed(2)} (${summarySign}${totalPlPct.toFixed(2)}%)</b></div>
+        </div>
+    `;
+
+    portfolioContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Analítica de Portafolio</h3>' + summaryHtml + tableHtml;
+}
 
 // Init
 renderMarketStatus();
@@ -463,11 +599,18 @@ function renderChart(data, canvasId) {
         chartInstances[canvasId].destroy();
     }
 
+    // Determine how many days to show based on standard term
+    // short = 60 days (~3 months), long = 250 days (~1 year)
+    const pointsToShow = currentTerm === 'short' ? -60 : -250;
+
+    const labels = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
+    const prices = data.history.prices ? data.history.prices.slice(pointsToShow) : [];
+
     // Prepare datasets
     const datasets = [
         {
             label: 'Precio',
-            data: data.history.prices,
+            data: prices,
             borderColor: color,
             backgroundColor: color,
             borderWidth: 2,
@@ -487,7 +630,7 @@ function renderChart(data, canvasId) {
         // We assumed same length in realData.js slice(-60).
         datasets.push({
             label: 'EMA 20',
-            data: data.history.ema20,
+            data: data.history.ema20.slice(pointsToShow),
             borderColor: '#3b82f6', // Blue
             borderWidth: 1,
             borderDash: [5, 5],
@@ -502,7 +645,7 @@ function renderChart(data, canvasId) {
     if (data.history.sma200 && data.history.sma200.length > 0) {
         datasets.push({
             label: 'SMA 200',
-            data: data.history.sma200,
+            data: data.history.sma200.slice(pointsToShow),
             borderColor: '#a855f7', // Purple
             borderWidth: 1,
             pointRadius: 0,
@@ -515,7 +658,7 @@ function renderChart(data, canvasId) {
     chartInstances[canvasId] = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: data.history.dates, // X-Axis Labels (Dates)
+            labels: labels, // X-Axis Labels (Dates)
             datasets: datasets
         },
         options: {
