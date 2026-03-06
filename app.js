@@ -206,6 +206,12 @@ let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
 let portfolio = JSON.parse(localStorage.getItem('advisor_portfolio') || '[]');
+window.portfolioTerm = 'short'; // Plazo por defecto en la pestaña Mi Portafolio
+
+window.togglePortfolioTerm = (term) => {
+    window.portfolioTerm = term;
+    renderPortfolio();
+};
 
 
 function renderMarketStatus() {
@@ -539,7 +545,7 @@ function renderPortfolio() {
         // Calculate Signal
         let signalBadge = '<span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>';
         if (stockData) {
-            const analysis = analyzeStock(stockData, 'short');
+            const analysis = analyzeStock(stockData, window.portfolioTerm);
             const sig = analysis.signal;
 
             let bgClass = 'hold-badge';
@@ -580,7 +586,15 @@ function renderPortfolio() {
         </div>
     `;
 
-    portfolioContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Analítica de Portafolio</h3>' + summaryHtml + tableHtml;
+    const toggleHtml = `
+        <div style="margin-bottom: 1rem; text-align: right;">
+            <span style="font-size: 0.85rem; color: var(--text-secondary); margin-right: 0.5rem;">Señal de Recomendación:</span>
+            <button onclick="togglePortfolioTerm('short')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'short' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'short' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem;">Corto Plazo</button>
+            <button onclick="togglePortfolioTerm('long')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'long' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'long' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem; margin-left: 0.5rem;">Largo Plazo</button>
+        </div>
+    `;
+
+    portfolioContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Analítica de Portafolio</h3>' + summaryHtml + toggleHtml + tableHtml;
 }
 
 // Init
