@@ -2,7 +2,7 @@ name: Daily Stock Data Sync (Backend)
 
 on:
   schedule:
-    - cron: '0 22 * * *' # Corre a las 10 PM UTC / 7 PM Hora Local (después del cierre del mercado)
+    - cron: '0 14,16,18,20,22 * * 1-5' # Cada 2 horas de 11:00 AM a 7:00 PM AR, de lunes a viernes
   workflow_dispatch: # Permite correrlo manualmente desde la pestaña "Actions"
 
 jobs:

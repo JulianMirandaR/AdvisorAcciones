@@ -10,7 +10,7 @@ const signalMemory = {};
 
 // --- Logic for Recommendations ---
 
-function analyzeStock(data, term) {
+function analyzeStock(data, term, portfolioInfo = null) {
     let score = 0;
     let reasons = [];
     let signal = "NO OPERAR"; // Inicial por defecto
@@ -261,6 +261,42 @@ function analyzeStock(data, term) {
     if (data.candles && data.candles.length > 0 && isUptrend) patternPoints += 0.5;
     score += patternPoints;
 
+    // 8.5 PORTFOLIO RISK MANAGEMENT (Trailing Stop & Take Profit)
+    let actionFlag = null;
+    let isTrailingStopEnforced = false;
+    let isTakeProfitEnforced = false;
+
+    if (portfolioInfo) {
+        const entryPrice = parseFloat(portfolioInfo.entryPrice);
+        const highestPrice = parseFloat(portfolioInfo.highestPrice);
+        
+        // Trailing Stop (Stop Loss Dinámico) al 8% (configurable)
+        const trailingStopPct = 0.08;
+        if (highestPrice > 0 && price > 0) {
+            const dropFromHigh = (highestPrice - price) / highestPrice;
+            if (dropFromHigh >= trailingStopPct) {
+                score -= 10; // Forzar baja extrema
+                forbidBuy = true;
+                isTrailingStopEnforced = true;
+                actionFlag = "TRAILING_STOP";
+                addReason(`Trailing Stop activado (-${(dropFromHigh * 100).toFixed(1)}% desde máximo).`, "negative", 150);
+            }
+        }
+
+        // Take Profit Inteligente
+        if (!isTrailingStopEnforced && price > entryPrice) {
+            const isRsiOverbought = rsi > 70;
+            const isMacdLosingStrength = macdHist < 0 || (macdHist > 0 && isDecelerating);
+            
+            if ((isRsiOverbought && isMacdLosingStrength) || isNearResistance) {
+                score -= 6; 
+                isTakeProfitEnforced = true;
+                actionFlag = "TAKE_PROFIT";
+                addReason(`Take Profit inteligente por agotamiento de momentum o techo técnico.`, "negative", 140);
+            }
+        }
+    }
+
     // ACORTE DE PUNTUACIÓN POR BLOQUEOS
     if (forbidBuy && score > 4) {
         score = 4; 
@@ -299,7 +335,7 @@ function analyzeStock(data, term) {
         if (changed && (prev.signal.includes("COMPRA") || prev.signal.includes("PRE-COMPRA"))) {
             if (tentativeSignal.includes("VENTA")) {
                 let clearBreakdown = (price < sma50 && macdHist < 0);
-                if (score >= -6 && !clearBreakdown) {
+                if (score >= -6 && !clearBreakdown && !isTrailingStopEnforced && !isTakeProfitEnforced) {
                     tentativeSignal = "MANTENER"; // Salto amortiguado
                 }
             }
@@ -311,7 +347,7 @@ function analyzeStock(data, term) {
 
     reasons.sort((a, b) => b.weight - a.weight);
 
-    return { signal, score: Number(score.toFixed(1)), reasons };
+    return { signal, score: Number(score.toFixed(1)), reasons, actionFlag };
 }
 
 // --- UI Rendering ---
@@ -360,10 +396,10 @@ function renderMarketStatus() {
 async function initDashboard() {
     container.innerHTML = `
         <div style="text-align:center; width:100%; padding: 2rem;">
-            <h3>Iniciando Análisis (24 Acciones)...</h3>
+            <h3>Iniciando Análisis del Mercado...</h3>
             <div id="loading-progress" style="color: var(--accent-blue); margin-top: 1rem; font-weight:bold;">Verificando Caché...</div>
              <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top:0.5rem;">
-                Los datos de hoy se recuperan de memoria si existen. Si no, se descargan secuencialmente (lento para evitar bloqueo API).
+                Los datos de hoy se recuperan de memoria si existen. Si no, se descargan secuencialmente.
             </p>
         </div>
     `;
@@ -616,6 +652,7 @@ window.addToPortfolioPrompt = (symbol) => {
         portfolio.push({
             symbol: symbol,
             price: parseFloat(price),
+            highestPrice: parseFloat(price),
             qty: parseFloat(qty)
         });
         localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
@@ -652,12 +689,20 @@ function renderPortfolio() {
         return;
     }
 
+    let hasPortfolioChanges = false;
+
     portfolio.forEach((pos, index) => {
         const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
 
         const currentPrice = stockData ? parseFloat(stockData.price) : pos.price; // fallback if not found
         const basePrice = parseFloat(pos.price);
         const qty = parseFloat(pos.qty);
+
+        // Tracker de Máximo histórico para Trailing Stop
+        if (!pos.highestPrice || currentPrice > pos.highestPrice) {
+            pos.highestPrice = Math.max(currentPrice, basePrice);
+            hasPortfolioChanges = true;
+        }
 
         const inv = basePrice * qty;
         const currentVal = currentPrice * qty;
@@ -673,15 +718,23 @@ function renderPortfolio() {
         // Calculate Signal
         let signalBadge = '<span style="color: var(--text-secondary); font-size: 0.8rem;">--</span>';
         if (stockData) {
-            const analysis = analyzeStock(stockData, window.portfolioTerm);
+            const portfolioInfo = { entryPrice: basePrice, highestPrice: pos.highestPrice };
+            const analysis = analyzeStock(stockData, window.portfolioTerm, portfolioInfo);
             const sig = analysis.signal;
 
             let bgClass = 'hold-badge';
             if (sig.includes('COMPRA')) bgClass = 'buy-badge';
             if (sig.includes('VENTA') || sig.includes('VENDER')) bgClass = 'sell-badge';
 
+            let actionBadgeHtml = '';
+            if (analysis.actionFlag === 'TRAILING_STOP') {
+                actionBadgeHtml = `<br><span class="recommendation-badge" style="background:#ef4444; color:#fff; font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-top:4px;">STOP LOSS ACTIVO</span>`;
+            } else if (analysis.actionFlag === 'TAKE_PROFIT') {
+                actionBadgeHtml = `<br><span class="recommendation-badge" style="background:#eab308; color:#000; font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-top:4px;">TAKE PROFIT</span>`;
+            }
+
             // Re-using styles from your CSS but making it smaller
-            signalBadge = `<span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>`;
+            signalBadge = `<div style="text-align:center;"><span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>${actionBadgeHtml}</div>`;
         }
 
         tableHtml += `
@@ -699,6 +752,10 @@ function renderPortfolio() {
     });
 
     tableHtml += `</tbody></table></div>`;
+
+    if (hasPortfolioChanges) {
+        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+    }
 
     // Summary
     const totalPl = totalValue - totalInvestment;
@@ -854,6 +911,105 @@ function renderChart(data, canvasId) {
         }
     });
 }
+
+// --- BONUS: Backtesting Engine Integrado ---
+// Función disponible globalmente para usarse desde la consola de desarrollador
+/**
+ * Ejecuta una simulación de operaciones a lo largo del historial de datos.
+ * @param {Array} stockHistory - Array de días (Ej: resultado de un mapeo previo que contenga { price, rsi, macd, ema20... })
+ * @param {String} term - "short" (por defecto) o "long"
+ */
+window.runBacktest = function(stockHistory, term = 'short') {
+    if (!Array.isArray(stockHistory) || stockHistory.length === 0) {
+        console.error("Backtest falló: stockHistory debe ser un arreglo con datos estructurados para analyzeStock.");
+        return null; 
+    }
+
+    let capital = 1000;
+    let position = null; // null si no hay compradas, { entryPrice, highestPrice, qty } si sí
+    let totalTrades = 0;
+    let winningTrades = 0;
+    let maxDrawdown = 0;
+    let peakCapital = capital;
+
+    console.log(`[Backtest] Iniciando simulación en ${stockHistory.length} días...`);
+
+    stockHistory.forEach((dayData, index) => {
+        const currentPrice = parseFloat(dayData.price);
+        if (isNaN(currentPrice)) return;
+
+        let portfolioInfo = null;
+        if (position) {
+            // Actualizar Tracker de Highest Price
+            if (currentPrice > position.highestPrice) {
+                position.highestPrice = currentPrice;
+            }
+            portfolioInfo = {
+                entryPrice: position.entryPrice,
+                highestPrice: position.highestPrice
+            };
+        }
+
+        // Llamada nativa a tu capa de análisis exacta
+        const analysis = analyzeStock(dayData, term, portfolioInfo);
+        const signal = analysis.signal;
+
+        if (!position) {
+            // Buscando entrar (Ignoramos si bloqueado e intentamos cuando hay setup real)
+            if (signal.includes("COMPRA") || signal.includes("PRE-COMPRA")) {
+                const qty = capital / currentPrice;
+                position = {
+                    entryPrice: currentPrice,
+                    qty: qty,
+                    highestPrice: currentPrice
+                };
+                totalTrades++;
+            }
+        } else {
+            // Buscando salir
+            if (signal.includes("VENTA") || analysis.actionFlag) { // Incluye VENTA, VENTA FUERTE y flags dinámicos TS / TP
+                const profit = (currentPrice - position.entryPrice) * position.qty;
+                capital = currentPrice * position.qty; // Reinvertimos / Liquidamos
+
+                if (profit > 0) winningTrades++;
+                position = null; 
+            }
+        }
+
+        // Evaluar Max Drawdown
+        const currentEquity = position ? (currentPrice * position.qty) : capital;
+        if (currentEquity > peakCapital) {
+            peakCapital = currentEquity;
+        } else {
+            const drawdown = ((peakCapital - currentEquity) / peakCapital) * 100;
+            if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+        }
+    });
+
+    // Cerrar forzosamente cualquier posición abierta al final
+    if (position) {
+        const lastPrice = parseFloat(stockHistory[stockHistory.length - 1].price);
+        capital = lastPrice * position.qty;
+        const finalProfit = (lastPrice - position.entryPrice) * position.qty;
+        if (finalProfit > 0) winningTrades++;
+    }
+
+    const profitPercent = ((capital - 1000) / 1000) * 100;
+    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+
+    const result = {
+        initialCapital: '$1000.00',
+        finalCapital: `$${capital.toFixed(2)}`,
+        profitPercent: `${profitPercent.toFixed(2)}%`,
+        totalTrades: totalTrades,
+        winRate: `${winRate.toFixed(2)}%`,
+        maxDrawdown: `${maxDrawdown.toFixed(2)}%`
+    };
+
+    console.table(result);
+    return result;
+};
+
 
 function renderHeatmap() {
     const heatmapContainer = document.getElementById('marketHeatmap');

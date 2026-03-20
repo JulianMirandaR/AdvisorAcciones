@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc } from "firebase/firestore";
 import { SMA, EMA, RSI, MACD, BollingerBands, Stochastic } from "technicalindicators";
+import yahooFinance from 'yahoo-finance2';
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -14,13 +15,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-    console.error("API_KEY environment variable is not defined");
-    process.exit(1);
-}
 
 const FRED_API_KEY = process.env.FRED_API_KEY;
 if (!FRED_API_KEY) {
@@ -49,7 +43,31 @@ const activeStocks = [
     { symbol: 'XP', name: 'XP Inc.' },
     { symbol: 'AMD', name: 'AMD' },
     { symbol: 'INTC', name: 'Intel' },
-    { symbol: 'DIS', name: 'Disney' }
+    { symbol: 'DIS', name: 'Disney' },
+    { symbol: 'MELI', name: 'MercadoLibre' },
+    { symbol: 'BABA', name: 'Alibaba Group' },
+    { symbol: 'SHOP', name: 'Shopify' },
+    { symbol: 'UBER', name: 'Uber Technologies' },
+    { symbol: 'PYPL', name: 'PayPal' },
+    { symbol: 'SQ', name: 'Block Inc' },
+    { symbol: 'COIN', name: 'Coinbase' },
+    { symbol: 'BA', name: 'Boeing' },
+    { symbol: 'LLY', name: 'Eli Lilly' },
+    { symbol: 'AVGO', name: 'Broadcom' },
+    { symbol: 'GGAL.BA', name: 'Grupo Financiero Galicia (AR)' },
+    { symbol: 'YPFD.BA', name: 'YPF S.A. (AR)' },
+    { symbol: 'PAMP.BA', name: 'Pampa Energía (AR)' },
+    { symbol: 'BMA.BA', name: 'Banco Macro (AR)' },
+    { symbol: 'TXAR.BA', name: 'Ternium Argentina (AR)' },
+    { symbol: 'ALUA.BA', name: 'Aluar (AR)' },
+    { symbol: 'CEPU.BA', name: 'Central Puerto (AR)' },
+    { symbol: 'TGSU2.BA', name: 'Transportadora Gas del Sur (AR)' },
+    { symbol: 'EDN.BA', name: 'Edenor (AR)' },
+    { symbol: 'CRES.BA', name: 'Cresud (AR)' },
+    { symbol: 'ARM', name: 'Arm Holdings' },
+    { symbol: 'CRWD', name: 'Crowdstrike' },
+    { symbol: 'SPOT', name: 'Spotify' },
+    { symbol: 'SMCI', name: 'Super Micro Computer' }
 ];
 
 const staticFundamentals = {
@@ -76,7 +94,31 @@ const staticFundamentals = {
     'XP': { peRatio: 12.80, eps: 1.85, beta: 1.45, roe: 21.0 },
     'AMD': { peRatio: 81.51, eps: 2.65, beta: 1.80, roe: 0.5 },
     'INTC': { peRatio: 'N/A', eps: -0.27, beta: 1.25, roe: -1.2 },
-    'DIS': { peRatio: 15.96, eps: 6.81, beta: 1.35, roe: 2.5 }
+    'DIS': { peRatio: 15.96, eps: 6.81, beta: 1.35, roe: 2.5 },
+    'MELI': { peRatio: 72.4, eps: 24.50, beta: 1.6, roe: 38.2 },
+    'BABA': { peRatio: 12.5, eps: 6.27, beta: 0.6, roe: 14.8 },
+    'SHOP': { peRatio: 110.5, eps: 0.75, beta: 2.0, roe: -5.2 },
+    'UBER': { peRatio: 89.2, eps: 0.85, beta: 1.4, roe: 17.5 },
+    'PYPL': { peRatio: 16.2, eps: 3.55, beta: 1.3, roe: 20.1 },
+    'SQ': { peRatio: 75.3, eps: 1.05, beta: 2.3, roe: -1.8 },
+    'COIN': { peRatio: 'N/A', eps: -4.50, beta: 3.2, roe: -14.6 },
+    'BA': { peRatio: 'N/A', eps: -12.10, beta: 1.4, roe: 'N/A' },
+    'LLY': { peRatio: 125.4, eps: 5.60, beta: 0.3, roe: 45.2 },
+    'AVGO': { peRatio: 40.5, eps: 31.50, beta: 1.1, roe: 55.4 },
+    'GGAL.BA': { peRatio: 10.5, eps: 345.5, beta: 1.8, roe: 25.4 },
+    'YPFD.BA': { peRatio: 4.2, eps: 450.2, beta: 1.9, roe: 18.5 },
+    'PAMP.BA': { peRatio: 6.8, eps: 210.4, beta: 1.4, roe: 20.1 },
+    'BMA.BA': { peRatio: 9.4, eps: 512.3, beta: 1.7, roe: 22.8 },
+    'TXAR.BA': { peRatio: 5.1, eps: 120.5, beta: 1.2, roe: 15.6 },
+    'ALUA.BA': { peRatio: 6.5, eps: 85.2, beta: 1.1, roe: 14.2 },
+    'CEPU.BA': { peRatio: 8.2, eps: 75.4, beta: 1.3, roe: 12.5 },
+    'TGSU2.BA': { peRatio: 7.5, eps: 180.2, beta: 1.4, roe: 16.8 },
+    'EDN.BA': { peRatio: 'N/A', eps: -45.2, beta: 1.5, roe: -5.2 },
+    'CRES.BA': { peRatio: 12.4, eps: 95.5, beta: 1.6, roe: 10.4 },
+    'ARM': { peRatio: 85.4, eps: 1.5, beta: 1.8, roe: 25.4 },
+    'CRWD': { peRatio: 'N/A', eps: 0.8, beta: 1.9, roe: 'N/A' },
+    'SPOT': { peRatio: 'N/A', eps: -1.2, beta: 1.6, roe: 'N/A' },
+    'SMCI': { peRatio: 42.1, eps: 20.5, beta: 2.1, roe: 45.8 }
 };
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -170,38 +212,34 @@ async function main() {
         console.log(`[${i + 1}/${activeStocks.length}] Fetching data for ${symbol}...`);
 
         if (i > 0) {
-            console.log(`Waiting 15 seconds to avoid rate limits...`);
-            await wait(15000);
+            console.log(`Waiting 2 seconds...`);
+            await wait(2000);
         }
 
         try {
-            const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${symbol}&apikey=${API_KEY}`;
-            const historyRes = await fetch(url);
-            const historyData = await historyRes.json();
+            const period1 = new Date();
+            period1.setFullYear(period1.getFullYear() - 2); // 2 years back for sufficient 200-day data
 
-            if (historyData['Error Message']) {
-                console.error(`API Error for ${symbol}:`, historyData['Error Message']);
+            const result = await yahooFinance.historical(symbol, {
+                period1: period1,
+                interval: '1d'
+            });
+
+            if (!result || result.length === 0) {
+                console.error(`No data for ${symbol}`);
                 continue;
             }
 
-            if (historyData['Information'] && historyData['Information'].includes('rate limit')) {
-                console.error("API LIMIT REACHED. Stopping operation.");
-                process.exit(1);
-            }
+            const validResults = result.filter(r => r.close != null && r.high != null && r.low != null);
+            const recentData = validResults.slice(-250); // Get latest 250 elements (1 trading year)
 
-            if (!historyData['Time Series (Daily)']) {
-                console.error(`No data for ${symbol}`, historyData);
-                continue;
-            }
-
-            const timeSeries = historyData['Time Series (Daily)'];
-            const dates = Object.keys(timeSeries).slice(0, 250).reverse();
-            const prices = dates.map(date => ({
-                date,
-                close: parseFloat(timeSeries[date]['4. close']),
-                high: parseFloat(timeSeries[date]['2. high']),
-                low: parseFloat(timeSeries[date]['3. low']),
-                volume: parseFloat(timeSeries[date]['5. volume'])
+            const dates = recentData.map(d => d.date.toISOString().split('T')[0]);
+            const prices = recentData.map(d => ({
+                date: d.date.toISOString().split('T')[0],
+                close: parseFloat(d.close),
+                high: parseFloat(d.high),
+                low: parseFloat(d.low),
+                volume: parseFloat(d.volume || 0)
             }));
 
             const closePrices = prices.map(p => p.close);
