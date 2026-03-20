@@ -28,36 +28,58 @@ function analyzeStock(data, term) {
     // 0. Macro Context (VIX)
     if (globalMacroData && globalMacroData.vix) {
         if (globalMacroData.vix > 30) {
-            score -= 2; // Penalize buy setups during extreme panic
+            score -= 2;
             addReason(`Macro: VIX Extremo (${globalMacroData.vix.toFixed(2)}). Riesgo de alta volatilidad.`, "negative", 8);
         } else if (globalMacroData.vix < 20) {
             addReason(`Macro: VIX Bajo (${globalMacroData.vix.toFixed(2)}). Entorno favorable.`, "positive", 3);
         }
     }
 
-    // 1. FILTRO DE TENDENCIA FUERTE (Mayor peso)
+    // 1. CONFIRMACIÓN Y EXTENSIÓN DE TENDENCIA
     let isUptrend = false;
     let isDowntrend = false;
+    let forbidBuy = false; // Bloquea compras
+    
+    // Distancia a medias para detección de extensiones / inercia
+    const distFromEma = (ema20 && price > 0) ? (price - ema20) / ema20 : 0;
+    
+    if (distFromEma > 0.04) {
+        forbidBuy = true;
+        score -= 3;
+        addReason(`Precio sobre-extendido (>4% sobre EMA20). Entradas prohibidas.`, "negative", 125);
+    }
+
+    if (sma200 && price < sma200) {
+        forbidBuy = true;
+        score -= 4;
+        addReason(`Tendencia general bajista (Precio < SMA 200). Compras bloqueadas.`, "negative", 120);
+    }
 
     if (term === 'short') {
         const shortMa = ema20 || sma50;
         const maLabel = ema20 ? 'EMA 20' : 'SMA 50';
 
-        if (shortMa && price > shortMa) {
+        // Única condición válida de tendencia alcista para el corto plazo
+        if (ema20 && sma50 && price > ema20 && ema20 > sma50) {
             isUptrend = true;
             score += 4;
-            addReason(`Tendencia de corto plazo alcista (Precio > ${maLabel})`, "positive", 100);
+            addReason(`Tendencia alcista confirmada (Precio > EMA20 > SMA50)`, "positive", 110);
             
-            // Filtro estricto: Largo plazo sigue importando
-            if (sma200 && price < sma200) {
-                isUptrend = false; // Anula tendencia alcista
-                score -= 3;
-                addReason(`Tendencia general bajista (Precio < SMA 200, evitar compras)`, "negative", 110);
+            // Inercia de tendencia (Evitar que una caída de 2%-4% arruine la señal si sigue > EMA20)
+            if (data.changePercent && parseFloat(data.changePercent) < -2 && distFromEma > 0) {
+                addReason(`Inercia activa: Retroceso diario pero tendencia intacta.`, "neutral", 90);
+                score += 1; // Compensación de mantenimiento
             }
         } else {
-            isDowntrend = true;
-            score -= 4;
-            addReason(`Tendencia de corto plazo bajista (Precio < ${maLabel})`, "negative", 100);
+            // Si no se cumple
+            forbidBuy = true;
+            if (price < shortMa) {
+                isDowntrend = true;
+                score -= 3;
+                addReason(`Estructura de corto plazo bajista o rota.`, "negative", 100);
+            } else {
+                addReason(`En consolidación o débil.`, "neutral", 50);
+            }
         }
     } else {
         // Largo Plazo
@@ -67,213 +89,226 @@ function analyzeStock(data, term) {
             addReason(`Tendencia sólida de largo plazo (Precio > SMA 200)`, "positive", 110);
         } else {
             isDowntrend = true;
-            score -= 5;
-            addReason(`Activo en clara tendencia bajista (Precio < SMA 200, NO COMPRAR)`, "negative", 110);
+            forbidBuy = true;
         }
     }
 
-    // 2. MOMENTUM (Clave)
+    // 2. BOLLINGER BANDS (No perseguir extremo)
+    if (data.bollinger && term === 'short') {
+        if (price > parseFloat(data.bollinger.upper)) {
+            score -= 4;
+            forbidBuy = true;
+            addReason(`Precio fuera de Banda Bollinger Superior (Exceso FOMO).`, "negative", 115);
+        } else if (price < parseFloat(data.bollinger.lower)) {
+            score += 0.5;
+        }
+    }
+
+    // 3. MEJORA DEL MOMENTUM (Detección de aceleración/desaceleración)
     let momentumScore = 0;
+    let isPositiveMomentum = false;
+    let isDecelerating = false;
+    let isStoppingFall = false;
+
     if (data.history && data.history.prices && data.history.prices.length >= 5) {
-        const prices = data.history.prices;
-        const price5DaysAgo = prices[prices.length - 5];
-        if (price > price5DaysAgo) {
-            momentumScore = 3;
-            addReason(`Momentum positivo (Precio en ascenso vs hace 5 días)`, "positive", 90);
-        } else if (price < price5DaysAgo) {
-            momentumScore = -3;
-            addReason(`Momentum negativo (Precio en retroceso vs hace 5 días)`, "negative", 90);
-            if (isDowntrend) {
-                momentumScore -= 2; // Penalización fuerte
-                addReason(`Caída libre confirmada (Peligro de "knife catching")`, "negative", 95);
+        const p = data.history.prices;
+        const p0 = price;
+        const p2 = p[p.length - 3]; // Hace 2-3 días
+        const p4 = p[p.length - 5]; // Hace 5 días
+
+        const recentChange = p2 > 0 ? (p0 - p2) / p2 : 0;
+        const olderChange = p4 > 0 ? (p2 - p4) / p4 : 0;
+
+        if (p0 > p4) {
+            isPositiveMomentum = true;
+            if (recentChange < olderChange && recentChange >= 0) {
+                isDecelerating = true;
+                momentumScore = 0.5;
+                addReason(`Momentum alcista perdiendo fuerza (Desaceleración)`, "neutral", 85);
+            } else {
+                momentumScore = 2;
+                addReason(`Momentum alcista acelerando`, "positive", 85);
             }
         } else {
-            addReason(`Momentum lateralizado (Sin avance direccional)`, "neutral", 20);
+            if (recentChange > olderChange && olderChange < -0.01) {
+                isStoppingFall = true;
+                momentumScore = 0.5;  // Dejó de caer agresivamente
+                addReason(`Momentum negativo frenando (Posible suelo local)`, "positive", 85);
+            } else {
+                momentumScore = -2;
+                addReason(`Momentum bajista continuo`, "negative", 85);
+                if (isDowntrend) {
+                    momentumScore -= 2;
+                    forbidBuy = true;
+                    addReason(`Anti-Caída: Momentum negativo en tendencia bajista.`, "negative", 120);
+                }
+            }
         }
     }
     score += momentumScore;
 
-    // 2.2 Bollinger Bands 
-    if (data.bollinger && term === 'short') {
-        if (price < parseFloat(data.bollinger.lower)) {
-            score += 2;
-            addReason(`Precio cruzó Banda Inferior Bollinger (Sobrevendido Extremo)`, "positive", 70);
-        } else if (price > parseFloat(data.bollinger.upper)) {
-            score -= 2;
-            addReason(`Precio cruzó Banda Superior Bollinger (Sobrecomprado Extremo)`, "negative", 70);
-        }
-    }
-
-    // 2.3 Stochastic 
-    if (data.stochastic) {
-        if (parseFloat(data.stochastic.k) < 20 && parseFloat(data.stochastic.d) < 20) {
-            score += 1;
-            addReason(`Estocástico < 20 (Señal de Compra / Sobrevendido)`, "positive", 65);
-        } else if (parseFloat(data.stochastic.k) > 80 && parseFloat(data.stochastic.d) > 80) {
-            score -= 1;
-            addReason(`Estocástico > 80 (Señal de Venta / Sobrecomprado)`, "negative", 65);
-        }
-    }
-
-    // 3. MACD MEJORADO
+    // 4. MACD
     const macdHist = data.macd && data.macd.histogram !== undefined ? parseFloat(data.macd.histogram) : 0;
     const macdLine = data.macd && data.macd.line !== undefined ? parseFloat(data.macd.line) : 0;
     const macdSig = data.macd && data.macd.signal !== undefined ? parseFloat(data.macd.signal) : 0;
     
+    let isMacdCrossingOrPositive = (macdHist > -0.02 || macdLine > macdSig); 
+    
     if (macdHist > 0 && macdLine > macdSig) {
-        if (isUptrend) {
-            score += 2;
-            addReason("MACD confirmando fuerza de la tendencia alcista", "positive", 80);
-        } else {
-            score += 1;
-            addReason("MACD cruzando al alza (Posible inicio de rebote)", "positive", 70);
-        }
+        score += 2;
+        addReason("MACD: Tendencia y momentum alcista confirmados", "positive", 80);
     } else if (macdHist < 0 || macdLine < macdSig) {
-        if (isUptrend) {
-            score -= 2;
-            addReason("MACD mostrando señales de debilidad en la tendencia", "negative", 80);
-        } else {
-            score -= 3;
-            addReason("MACD confirmando momentum fuertemente bajista", "negative", 80);
-        }
+        score -= 1.5;
     }
 
-    // 4. RSI REALISTA
+    // 5. RSI AMIGABLE
     const rsi = data.rsi ? parseFloat(data.rsi) : 50;
-    if (rsi < 30) {
-        if (isUptrend || momentumScore > 0) {
-            score += 2;
-            addReason(`RSI en ${rsi.toFixed(1)} (Sobreventa con signos de recuperación)`, "positive", 75);
-        } else {
-            score -= 2;
-            addReason(`RSI en ${rsi.toFixed(1)} (Evitar compras - Acción cayendo fuertemente)`, "negative", 85);
-        }
-    } else if (rsi > 65) {
+    let isRsiEarly = (rsi >= 45 && rsi <= 60);
+    let isRsiIdeal = (rsi >= 40 && rsi <= 55);
+
+    if (rsi > 65) {
         score -= 2;
-        addReason(`RSI en ${rsi.toFixed(1)} (Sobrecompra - Riesgo de corrección)`, "negative", 75);
-    } else {
-        addReason(`RSI en ${rsi.toFixed(1)} (Zona de recorrido regular)`, "neutral", 30);
+        forbidBuy = true;
+        addReason(`RSI > 65. Entradas prohibidas (riesgo de techo local).`, "negative", 115);
+    } else if (rsi < 30) {
+        if (!isMacdCrossingOrPositive) {
+            score -= 4;
+            forbidBuy = true;
+            addReason(`RSI sobrevendido pero MACD bajista. Posible cuchillo cayendo.`, "negative", 115);
+        } else if (isUptrend || isStoppingFall) {
+            score += 1;
+            addReason(`RSI sobrevendido frenando caída`, "positive", 60);
+        }
+    } else if (isRsiIdeal) {
+        score += 1;
+        addReason(`RSI sano en zona verde (${rsi.toFixed(1)})`, "positive", 60);
     }
 
-    // 5. VOLUMEN COMO CONFIRMADOR
+    // 6. SOPORTES Y RESISTENCIAS
+    const support = data.support ? parseFloat(data.support) : null;
+    const resistance = data.resistance ? parseFloat(data.resistance) : null;
+    let isNearSupportOrEma = false;
+    let isNearResistance = false;
+
+    if (ema20 && price > 0 && Math.abs(price - ema20) / price < 0.025) {
+        isNearSupportOrEma = true;
+    }
+
+    if (support && resistance && price > 0) {
+        const distToSupport = Math.abs(price - support) / price;
+        const distToResist = Math.abs(resistance - price) / price;
+
+        if (distToSupport < 0.025) {
+            isNearSupportOrEma = true;
+            score += 1.5;
+            addReason(`Rebote en soporte técnico testeado (${support})`, "positive", 70);
+        } else if (price < support) {
+            score -= 3;
+            addReason(`Pérdida de soporte clave.`, "negative", 85);
+        }
+
+        if (distToResist < 0.025 || price >= resistance) {
+            isNearResistance = true;
+            score -= 3;
+            forbidBuy = true;
+            addReason(`Muy cerca de resistencia (${resistance}). NO COMPRAR.`, "negative", 120);
+        }
+    }
+
+    // 7. ZONA IDEAL PROGRESIVA (CORE DEL SISTEMA)
+    // Nivel 1 (Early Entry): Tendencia OK, MACD asomando, RSI temprano, Sin resistencia inminente, Momentum no bajista
+    if (isUptrend && isRsiEarly && !isNearResistance && (isPositiveMomentum || isStoppingFall) && isMacdCrossingOrPositive) {
+        score += 2.5;
+        addReason(`CORE: Setup nivel 1 (Early Entry). Condiciones tempranas alineadas.`, "positive", 125);
+        
+        // Nivel 2 (Compra confirmada): Se apoya en Soporte/EMA y MACD está en verde
+        if (isNearSupportOrEma && macdHist > 0) {
+            score += 2;
+            addReason(`CORE: Setup nivel 2. Confirmación de soporte y momentum.`, "positive", 130);
+            
+            // Nivel 3 (Compra Fuerte): No está perdiendo fuerza
+            if (!isDecelerating && isRsiIdeal) {
+                score += 2;
+                addReason(`CORE: Setup nivel 3. Zona ideal perfecta.`, "positive", 135);
+            }
+        }
+    }
+
+    // 8. OTROS (Volumen, Patrones, Estocástico, Fundamentales con peso residual)
     const avgVolume = data.avgVolume ? parseFloat(data.avgVolume) : 0;
     const volume = data.volume ? parseFloat(data.volume) : 0;
     const change = data.change ? parseFloat(data.change) : 0;
-
     if (avgVolume > 0 && volume > avgVolume) {
-        if (change > 0 && isUptrend) {
-            score += 1;
-            addReason("Volumen superior al promedio respaldando subida", "positive", 60);
-        } else if (change < 0 && isDowntrend) {
-            score -= 3;
-            addReason("Volumen institucional empujando precio a la baja (Pánico ALERTA)", "negative", 65);
-        } else if (change < 0) {
-            score -= 2;
-            addReason("Volumen alto en día bajista (Posible distribución)", "negative", 60);
-        }
+        if (change > 0 && isUptrend) score += 0.5;
+        else if (change < 0 && isDowntrend) score -= 1.5;
     }
 
-    // 6. FUNDAMENTALES (Impacto Moderado con ROE y Beta)
+    if (data.stochastic) {
+        if (parseFloat(data.stochastic.k) < 20) score += 0.5;
+        if (parseFloat(data.stochastic.k) > 80) score -= 0.5;
+    }
+
     if (data.peRatio && data.peRatio !== 'N/A') {
         const pe = parseFloat(data.peRatio);
-        if (pe > 0 && pe < 15) {
-            score += 1;
-            addReason(`Fundamental sólido (PER equilibrado: ${pe})`, "positive", 50);
-        } else if (pe > 35) {
-            score -= 1;
-            addReason(`Posible sobrevaloración (PER muy alto: ${pe})`, "negative", 50);
-        }
+        if (pe > 0 && pe < 15) score += 0.5;
+        else if (pe > 35) score -= 0.5;
     }
+    
+    if (data.roe && data.roe !== 'N/A' && parseFloat(data.roe) > 15) score += 0.5;
 
-    if (data.roe && data.roe !== 'N/A' && parseFloat(data.roe) > 15) {
-        score += 1;
-        addReason(`Fundamental: ROE excelente (${data.roe}%)`, "positive", 45);
-    }
-
-    if (data.beta && data.beta !== 'N/A') {
-        if (globalMacroData && globalMacroData.vix > 25 && parseFloat(data.beta) > 1.5) {
-            score -= 1;
-            addReason(`Fundamental: Beta Alto (${data.beta}) en mercado inestable`, "negative", 55);
-        } else if (parseFloat(data.beta) < 0.8) {
-            score += 1;
-            addReason(`Fundamental: Acción Defensiva (Beta ${data.beta})`, "positive", 45);
-        }
-    }
-
-    // 7. PATRONES Y VELAS (Confirmación Secundaria)
     let patternPoints = 0;
-    if (data.patterns && data.patterns.length > 0 && isUptrend) {
-        patternPoints += 0.5;
-        addReason(`Formación menor alcista: ${data.patterns[0]}`, "positive", 40);
-    }
-    if (data.candles && data.candles.length > 0 && isUptrend) {
-        patternPoints += 0.5;
-        addReason(`Lectura de vela: ${data.candles[0]}`, "positive", 35);
-    }
+    if (data.patterns && data.patterns.length > 0 && isUptrend) patternPoints += 0.5;
+    if (data.candles && data.candles.length > 0 && isUptrend) patternPoints += 0.5;
     score += patternPoints;
 
-    // 8. SOPORTES Y RESISTENCIAS
-    const support = data.support ? parseFloat(data.support) : null;
-    const resistance = data.resistance ? parseFloat(data.resistance) : null;
-    if (support && resistance && price > 0) {
-        const distToSupport = Math.abs(price - support);
-        const distToResist = Math.abs(resistance - price);
-
-        if (distToSupport / price < 0.02) {
-            if (isUptrend || momentumScore > 0) {
-                score += 2;
-                addReason(`Apoyo en base técnica o de soporte probada ($${support})`, "positive", 60);
-            } else {
-                score -= 1;
-                addReason(`Cerca de soporte técnico ($${support}) pero en caída (Riesgo)`, "negative", 65);
-            }
-        } else if (price < support) {
-            score -= 3;
-            addReason(`Rotura del Soporte en $${support} (Confirmación Bajista)`, "negative", 85);
-        } else if (distToResist / price < 0.02 || price >= resistance) {
-            score -= 2;
-            addReason(`Precio en Resistencia / Máximos ($${resistance}). Alto riesgo de recorte.`, "negative", 70);
-        }
+    // ACORTE DE PUNTUACIÓN POR BLOQUEOS
+    if (forbidBuy && score > 4) {
+        score = 4; 
+        addReason("Score capado a MANTENER por bloqueos estrictos.", "neutral", 100);
     }
 
-    // 9. MANEJO DE CONTRADICCIONES IMPORTANTES
-    if (rsi < 30 && (macdHist < 0 || macdLine < macdSig)) {
-        score -= 2;
-        addReason("Contradicción Crítica: Acción sobrevendida pero MACD sigue cayendo (Esperar)", "negative", 95);
-    }
-    if (!isUptrend && score > 2.5) {
-        score = 2.5; // Acotar falsos positivos en tendencias bajistas (máximo llega a "MANTENER")
-        addReason("Señales mixtas dominadas por la tendencia bajista principal", "negative", 88);
-    }
-
-    // 10. UMBRALES MÁS EXIGENTES
+    // 9. NUEVOS UMBRALES DE SEÑAL
     let tentativeSignal = "NO OPERAR";
-    if (score >= 8.5) {
+    if (score >= 9) {
         tentativeSignal = "COMPRA FUERTE";
-    } else if (score >= 6) {
+    } else if (score >= 7) {
         tentativeSignal = "COMPRA";
+    } else if (score >= 5) {
+        tentativeSignal = "PRE-COMPRA";
     } else if (score >= 3) {
         tentativeSignal = "MANTENER";
-    } else if (score <= -8.5) {
+    } else if (score <= -9) {
         tentativeSignal = "VENTA FUERTE";
     } else if (score <= -5) {
         tentativeSignal = "VENTA";
     }
 
-    // 11. ESTABILIDAD DE SEÑALES (Memoria)
+    // 10. ESTABILIDAD DE SEÑALES (No venta inmediata e inercias)
     const prev = signalMemory[stateKey];
     if (prev) {
         const diff = Math.abs(prev.score - score);
+        let changed = false;
+
         if (diff <= 3) {
-            if (!(prev.signal.includes("COMPRA") && isDowntrend)) {
-                tentativeSignal = prev.signal;
+            tentativeSignal = prev.signal; // Suavizado estándar
+        } else {
+            changed = true;
+        }
+
+        // Regla: No venta inmediata si venía de compra o pre-compra
+        if (changed && (prev.signal.includes("COMPRA") || prev.signal.includes("PRE-COMPRA"))) {
+            if (tentativeSignal.includes("VENTA")) {
+                let clearBreakdown = (price < sma50 && macdHist < 0);
+                if (score >= -6 && !clearBreakdown) {
+                    tentativeSignal = "MANTENER"; // Salto amortiguado
+                }
             }
         }
     }
+    
     signalMemory[stateKey] = { signal: tentativeSignal, score: score };
     signal = tentativeSignal;
 
-    // 12. ORDENAR RAZONES
     reasons.sort((a, b) => b.weight - a.weight);
 
     return { signal, score: Number(score.toFixed(1)), reasons };
@@ -414,7 +449,7 @@ function refreshUI() {
             const sig = item.analysis.signal.toLowerCase();
             if (activeFilter === 'buy') return sig.includes('compra');
             if (activeFilter === 'sell') return sig.includes('venta');
-            if (activeFilter === 'hold') return sig.includes('mantener');
+            if (activeFilter === 'hold') return sig.includes('mantener') || sig.includes('operar');
             return true;
         });
     }
@@ -452,14 +487,14 @@ function createCardHTML(item) {
         fundamentalHtml += `
         <div class="analysis-item">
             <span class="analysis-label">PER Ratio / EPS</span>
-            <span class="analysis-value">${data.peRatio} / $${data.epsGrowth !== 'N/A' ? data.epsGrowth : '--'}</span>
+            <span class="analysis-value">${data.peRatio} / $${data.epsGrowth && data.epsGrowth !== 'N/A' ? data.epsGrowth : '--'}</span>
         </div>`;
     }
     if (data.beta && data.beta !== 'N/A') {
         fundamentalHtml += `
         <div class="analysis-item">
             <span class="analysis-label">Beta / ROE</span>
-            <span class="analysis-value">${data.beta} / ${data.roe}%</span>
+            <span class="analysis-value">${data.beta} / ${data.roe && data.roe !== 'N/A' ? data.roe : '--'}%</span>
         </div>`;
     }
 
