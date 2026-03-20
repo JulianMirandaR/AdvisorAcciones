@@ -505,6 +505,7 @@ function createCardHTML(item) {
     const { data, analysis } = item;
     const card = document.createElement('div');
     card.className = 'stock-card';
+    card.id = `card-${data.symbol}`;
 
     let badgeClass = 'hold-badge';
     if (analysis.signal.includes('COMPRA')) badgeClass = 'buy-badge';
@@ -537,10 +538,14 @@ function createCardHTML(item) {
     const isFavorite = watchlist.includes(data.symbol);
     const starClass = isFavorite ? 'active' : '';
 
+    const isArg = data.symbol.endsWith('.BA');
+    const displaySymbol = isArg ? data.symbol.replace('.BA', '') : data.symbol;
+    const flag = isArg ? ' <span style="font-size:0.8em">🇦🇷</span>' : '';
+
     card.innerHTML = `
         <div class="card-header">
             <div>
-                <div class="stock-symbol">${data.symbol} 
+                <div class="stock-symbol">${displaySymbol}${flag} 
                     <span class="watchlist-star ${starClass}" onclick="toggleWatchlist('${data.symbol}', event)">★</span>
                 </div>
                 <div class="stock-name">${data.name}</div>
@@ -551,7 +556,10 @@ function createCardHTML(item) {
         <div class="price-section">
             <div class="current-price">$${data.price}</div>
             <div class="price-change ${changeClass}">${changeSign}${data.change} (${changeSign}${data.changePercent}%)</div>
-            <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: auto;">+ Portafolio</button>
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+                <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px;">+ Portafolio</button>
+                <button onclick="openTradingViewModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow);">📊 Gráfico Interactivo</button>
+            </div>
         </div>
 
         <div class="analysis-grid">
@@ -737,9 +745,13 @@ function renderPortfolio() {
             signalBadge = `<div style="text-align:center;"><span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>${actionBadgeHtml}</div>`;
         }
 
+        const isArg = pos.symbol.endsWith('.BA');
+        const displaySymbol = isArg ? pos.symbol.replace('.BA', '') : pos.symbol;
+        const flag = isArg ? ' 🇦🇷' : '';
+
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color);">
-                <td style="padding: 0.75rem; font-weight: bold;">${pos.symbol}</td>
+                <td style="padding: 0.75rem; font-weight: bold;">${displaySymbol}${flag}</td>
                 <td style="padding: 0.75rem;">${qty}</td>
                 <td style="padding: 0.75rem;">$${basePrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${currentPrice.toFixed(2)}</td>
@@ -1016,36 +1028,232 @@ function renderHeatmap() {
     if (!heatmapContainer) return;
 
     heatmapContainer.innerHTML = '';
+    // Styling the container to look like a True Treemap (100% width filled)
+    heatmapContainer.style.display = 'flex';
+    heatmapContainer.style.flexWrap = 'wrap';
+    heatmapContainer.style.gap = '2px';
+    heatmapContainer.style.backgroundColor = '#000';
+    heatmapContainer.style.padding = '2px';
+    heatmapContainer.style.borderRadius = '4px';
+    heatmapContainer.style.width = '100%';
+    // Eliminado el estiramiento vertical forzado (65vh y alignContent)
 
-    // Sort so positive comes first (highest positive down to largest negative)
-    const sortedByChange = [...globalStocksData].sort((a, b) => parseFloat(b.changePercent) - parseFloat(a.changePercent));
+    const sectorMapping = {
+        'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología',
+        'AMZN': 'Comercio Minorista', 'NFLX': 'Servicios Consumo', 'KO': 'Consumo', 'PEP': 'Consumo', 'WMT': 'Comercio Minorista', 'MCD': 'Servicios Consumo', 'NKE': 'Consumo', 'DIS': 'Servicios Consumo', 'BABA': 'Comercio Minorista', 'MELI': 'Comercio Minorista', 'UBER': 'Transporte', 'TSLA': 'Automotriz',
+        'JPM': 'Finanzas', 'V': 'Finanzas', 'MA': 'Finanzas', 'BAC': 'Finanzas', 'XP': 'Finanzas', 'PYPL': 'Finanzas', 'SQ': 'Finanzas', 'COIN': 'Finanzas', 'UPST': 'Finanzas',
+        'YPFD.BA': 'Mercado AR', 'PAMP.BA': 'Mercado AR', 'CEPU.BA': 'Mercado AR', 'TGSU2.BA': 'Mercado AR', 'EDN.BA': 'Mercado AR', 'CRES.BA': 'Mercado AR', 'ALUA.BA': 'Mercado AR', 'TXAR.BA': 'Mercado AR', 'BMA.BA': 'Mercado AR', 'GGAL.BA': 'Mercado AR',
+        'LLY': 'Salud', 'SPY': 'ETFs', 'BA': 'Industrial', 'YPF': 'Energía', 'CVX': 'Energía'
+    };
 
-    sortedByChange.forEach(stock => {
-        const change = parseFloat(stock.changePercent);
-        const block = document.createElement('div');
-        block.className = 'heatmap-block';
+    // Agrupar stocks por sector
+    const sectors = {};
+    let totalMarketWeight = 0;
 
-        // Intensity Color Logic
-        const intensity = Math.min(Math.abs(change) / 3, 1); // Cap at 3% change for max color
+    globalStocksData.forEach(stock => {
+        const sector = sectorMapping[stock.symbol] || 'Otros';
+        if (!sectors[sector]) sectors[sector] = { stocks: [], weight: 0 };
+        
+        // Proxy para Capitalización: Precio * Volumen Medio. Si no hay, valor fallback.
+        const price = parseFloat(stock.price) || 10;
+        const vol = parseFloat(stock.avgVolume) || parseFloat(stock.volume) || 1000000;
+        let weight = price * vol;
+        if (isNaN(weight) || weight <= 0) weight = 5000000; // mid cap fallback
+        
+        // Damos un poco más de peso a AR o restamos a mega caps para que no rompan el layout visualmente
+        weight = Math.sqrt(weight); 
 
-        if (change >= 0) {
-            // Green: #22c55e
-            block.style.backgroundColor = `rgba(34, 197, 94, ${0.1 + (intensity * 0.9)})`;
-            block.style.border = '1px solid #15803d'; // Green border
-        } else {
-            // Red: #ef4444
-            block.style.backgroundColor = `rgba(239, 68, 68, ${0.1 + (intensity * 0.9)})`;
-            block.style.border = '1px solid #b91c1c'; // Red border
-        }
-
-        block.innerHTML = `
-            <span class="heatmap-symbol">${stock.symbol}</span>
-            <span class="heatmap-change">${change > 0 ? '+' : ''}${change.toFixed(2)}%</span>
-        `;
-
-        block.title = `${stock.name}: $${stock.price}`;
-        heatmapContainer.appendChild(block);
+        sectors[sector].stocks.push({ ...stock, weight });
+        sectors[sector].weight += weight;
+        totalMarketWeight += weight;
     });
+
+    // Ordenar sectores por peso (más grandes primero)
+    const sortedSectors = Object.keys(sectors).sort((a, b) => sectors[b].weight - sectors[a].weight);
+
+    sortedSectors.forEach(sectorName => {
+        const sectorData = sectors[sectorName];
+        const sectorStocks = sectorData.stocks;
+        
+        // Ordenar cada sector por tamaño de acción
+        sectorStocks.sort((a, b) => b.weight - a.weight);
+
+        // Porcentaje de espacio que este sector debería ocupar aproximadamente
+        const sectorFlexTarget = (sectorData.weight / totalMarketWeight) * 100;
+        const sectorFlexBasis = Math.max(150, Math.min(600, sectorFlexTarget * 15));
+
+        const sectorDiv = document.createElement('div');
+        sectorDiv.style.flex = `1 1 ${sectorFlexBasis}px`; // Flex grow and shrink
+        sectorDiv.style.display = 'flex';
+        sectorDiv.style.flexDirection = 'column';
+        sectorDiv.style.border = '1px solid #111'; // Borde oscuro entre sectores
+        sectorDiv.style.backgroundColor = '#000';
+        sectorDiv.style.minHeight = '100px'; // Para que no colapsen
+        
+        const sectorTitle = document.createElement('div');
+        sectorTitle.textContent = sectorName;
+        sectorTitle.style.fontSize = '0.7rem';
+        sectorTitle.style.color = '#ccc';
+        sectorTitle.style.padding = '2px 4px';
+        sectorTitle.style.backgroundColor = '#111';
+        sectorTitle.style.whiteSpace = 'nowrap';
+        sectorTitle.style.overflow = 'hidden';
+        sectorTitle.style.textOverflow = 'ellipsis';
+        
+        const blocksContainer = document.createElement('div');
+        blocksContainer.style.display = 'flex';
+        blocksContainer.style.flexWrap = 'wrap';
+        blocksContainer.style.flex = '1'; // fill remaining space inside sector
+        blocksContainer.style.alignContent = 'flex-start'; // Vuelve a rellenar naturalmente de arriba hacia abajo
+        blocksContainer.style.width = '100%';
+
+        sectorStocks.forEach(stock => {
+            const change = parseFloat(stock.changePercent);
+            const block = document.createElement('div');
+            
+            // Calculamos el espacio flex de esta acción dentro de su sector
+            const stockFlexBasis = Math.max(40, (stock.weight / sectorData.weight) * 200);
+
+            block.style.flex = `1 1 ${stockFlexBasis}px`;
+            block.style.display = 'flex';
+            block.style.flexDirection = 'column';
+            block.style.justifyContent = 'center';
+            block.style.alignItems = 'center';
+            block.style.border = '1px solid #111'; // TradingView style dark borders
+            block.style.boxSizing = 'border-box';
+            block.style.minHeight = '45px'; // Vuelve la altura estandar original
+            block.style.overflow = 'hidden';
+            block.style.padding = '2px';
+
+            const intensity = Math.min(Math.abs(change) / 4, 1);
+            if (change >= 0) {
+                // TV Green #089981
+                if (change > 2) block.style.backgroundColor = '#089981';
+                else if (change > 0) block.style.backgroundColor = `rgba(8, 153, 129, ${0.4 + (intensity * 0.6)})`;
+                else block.style.backgroundColor = '#434651'; // Neutral
+            } else {
+                // TV Red #f23645
+                if (change < -2) block.style.backgroundColor = '#f23645';
+                else block.style.backgroundColor = `rgba(242, 54, 69, ${0.4 + (intensity * 0.6)})`;
+            }
+
+            // Para acciones grandes, mostrar texto un poco más grande
+            const symbolSize = stockFlexBasis > 60 ? '0.9rem' : '0.7rem';
+            const changeSize = stockFlexBasis > 60 ? '0.75rem' : '0.6rem';
+
+            const isArg = stock.symbol.endsWith('.BA');
+            const displaySymbol = isArg ? stock.symbol.replace('.BA', '') : stock.symbol;
+            const flag = isArg ? ' 🇦🇷' : '';
+
+            block.innerHTML = `
+                <span style="font-weight: 700; color: #fff; line-height: 1; font-size: ${symbolSize};">${displaySymbol}${flag}</span>
+                <span style="color: #fff; line-height: 1; margin-top: 2px; font-size: ${changeSize};">${change > 0 ? '+' : ''}${change.toFixed(2)}%</span>
+            `;
+
+            block.title = `${stock.name}: $${stock.price}`;
+            block.style.cursor = 'pointer';
+            
+            // Efecto Hover sutil
+            block.onmouseenter = () => { block.style.filter = 'brightness(1.2)'; };
+            block.onmouseleave = () => { block.style.filter = 'brightness(1)'; };
+            
+            // Click -> Scroll a la tarjeta
+            block.onclick = () => {
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.value = stock.symbol;
+                    searchTerm = stock.symbol.toLowerCase();
+                    activeFilter = 'all';
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    const allBtn = document.querySelector('.filter-btn[data-filter="all"]');
+                    if(allBtn) allBtn.classList.add('active');
+                    
+                    refreshUI(); 
+                    
+                    setTimeout(() => {
+                        const card = document.getElementById(`card-${stock.symbol}`);
+                        if (card) {
+                            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            card.style.transition = 'box-shadow 0.3s ease';
+                            card.style.boxShadow = '0 0 20px 5px var(--accent-blue)';
+                            setTimeout(() => card.style.boxShadow = '', 1500);
+                        }
+                    }, 100);
+                }
+            };
+
+            blocksContainer.appendChild(block);
+        });
+
+        sectorDiv.appendChild(sectorTitle);
+        sectorDiv.appendChild(blocksContainer);
+        heatmapContainer.appendChild(sectorDiv);
+    });
+}
+
+// --- Integración Modal TradingView Avanzado ---
+window.openTradingViewModal = (symbol) => {
+    const modal = document.getElementById('stockModal');
+    const modalBody = document.getElementById('modalBody');
+    
+    // Adaptar símbolo para el widget de TV
+    let tvSymbol = symbol;
+    if (symbol.endsWith('.BA')) {
+        tvSymbol = 'BCBA:' + symbol.replace('.BA', '');
+    } else {
+        tvSymbol = 'NASDAQ:' + symbol; // Default, funcionará en la gran mayoría
+    }
+
+    modalBody.innerHTML = `
+        <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Análisis Técnico de ${symbol}</h2>
+        <div style="height: 500px; width: 100%; border-radius: 8px; overflow: hidden; background: #000;">
+            <div class="tradingview-widget-container" style="height:100%;width:100%">
+              <div id="tradingview_${symbol.replace('.','')}" style="height:100%;width:100%"></div>
+            </div>
+        </div>
+        <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-secondary);">Gráfico interactivo proveído por TradingView. Puedes dibujar, agregar indicadores técnicos y modificar la temporalidad libremente acá arriba.</p>
+    `;
+    
+    modal.style.display = 'block';
+
+    const script = document.createElement('script');
+    script.src = 'https://s3.tradingview.com/tv.js';
+    script.async = true;
+    script.onload = () => {
+        new window.TradingView.widget({
+          "autosize": true,
+          "symbol": tvSymbol,
+          "interval": "D",
+          "timezone": "Etc/UTC",
+          "theme": "dark",
+          "style": "1",
+          "locale": "es",
+          "enable_publishing": false,
+          "backgroundColor": "#111827",
+          "gridColor": "#1f2937",
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "save_image": false,
+          "container_id": `tradingview_${symbol.replace('.','')}`,
+        });
+    };
+    modalBody.appendChild(script);
+};
+
+// Lógica de cierre del Modal
+const modal = document.getElementById('stockModal');
+const closeBtn = document.querySelector('.close-modal');
+if (closeBtn && modal) {
+    closeBtn.onclick = function() {
+        modal.style.display = "none";
+        document.getElementById('modalBody').innerHTML = '';
+    }
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = "none";
+            document.getElementById('modalBody').innerHTML = '';
+        }
+    }
 }
 
 function renderBuffettIndicator() {
