@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc } from "firebase/firestore";
 import { SMA, EMA, RSI, MACD, BollingerBands, Stochastic } from "technicalindicators";
-import yahooFinance from 'yahoo-finance2';
 
 const firebaseConfig = {
     apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
@@ -217,31 +216,46 @@ async function main() {
         }
 
         try {
-            const period1 = new Date();
-            period1.setFullYear(period1.getFullYear() - 2); // 2 years back for sufficient 200-day data
+            const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2y`;
+            const headerOptions = { headers: { 'User-Agent': 'Mozilla/5.0' } };
+            const historyRes = await fetch(url, headerOptions);
+            
+            if (!historyRes.ok) {
+                console.error(`HTTP Error ${historyRes.status} for ${symbol}`);
+                continue;
+            }
 
-            const result = await yahooFinance.historical(symbol, {
-                period1: period1,
-                interval: '1d'
-            });
-
-            if (!result || result.length === 0) {
+            const data = await historyRes.json();
+            if (!data.chart || !data.chart.result || data.chart.result.length === 0) {
                 console.error(`No data for ${symbol}`);
                 continue;
             }
 
-            const validResults = result.filter(r => r.close != null && r.high != null && r.low != null);
+            const resultObj = data.chart.result[0];
+            const timestamps = resultObj.timestamp;
+            const quote = resultObj.indicators.quote[0];
+
+            if (!timestamps || timestamps.length === 0 || !quote || !quote.close) {
+                console.error(`Incomplete historical payload for ${symbol}`);
+                continue;
+            }
+
+            let validResults = [];
+            for (let j = 0; j < timestamps.length; j++) {
+                if (quote.close[j] != null && quote.high[j] != null && quote.low[j] != null) {
+                    validResults.push({
+                        date: new Date(timestamps[j] * 1000).toISOString().split('T')[0],
+                        close: parseFloat(quote.close[j]),
+                        high: parseFloat(quote.high[j]),
+                        low: parseFloat(quote.low[j]),
+                        volume: parseFloat(quote.volume[j] || 0)
+                    });
+                }
+            }
+
             const recentData = validResults.slice(-250); // Get latest 250 elements (1 trading year)
-
-            const dates = recentData.map(d => d.date.toISOString().split('T')[0]);
-            const prices = recentData.map(d => ({
-                date: d.date.toISOString().split('T')[0],
-                close: parseFloat(d.close),
-                high: parseFloat(d.high),
-                low: parseFloat(d.low),
-                volume: parseFloat(d.volume || 0)
-            }));
-
+            const dates = recentData.map(d => d.date);
+            const prices = recentData; // Objects with date, close, high, low, volume
             const closePrices = prices.map(p => p.close);
 
             const sma50Data = SMA.calculate({ period: 50, values: closePrices });

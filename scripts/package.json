@@ -4,7 +4,6 @@
   "type": "module",
   "dependencies": {
     "firebase": "^10.8.1",
-    "technicalindicators": "^3.1.0",
-    "yahoo-finance2": "^2.14.0"
+    "technicalindicators": "^3.1.0"
   }
 }
