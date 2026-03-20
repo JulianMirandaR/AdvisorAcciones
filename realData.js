@@ -86,6 +86,9 @@ export class RealDataService {
             let loadedCount = 0;
 
             Object.values(firestoreData).forEach(stockData => {
+                if (stockData.history && typeof stockData.history === 'string') {
+                    try { stockData.history = JSON.parse(stockData.history); } catch (e) {}
+                }
                 if (!localMap.has(stockData.symbol)) {
                     mergedList.push(stockData);
                     localMap.set(stockData.symbol, stockData);

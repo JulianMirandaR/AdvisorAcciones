@@ -212,7 +212,7 @@ async function main() {
 
         if (i > 0) {
             console.log(`Waiting 2 seconds...`);
-            await wait(2000);
+            await wait(300);
         }
 
         try {
@@ -337,13 +337,13 @@ async function main() {
                 },
                 patterns: [],
                 candles: [],
-                history: {
+                history: JSON.stringify({
                     dates: dates.slice(-250),
                     prices: closePrices.slice(-250),
                     sma50: sma50Data.slice(-250),
                     ema20: ema20Data.slice(-250),
                     sma200: sma200Data.slice(-250)
-                }
+                })
             };
 
             const docRef = doc(db, "stocks", today);
