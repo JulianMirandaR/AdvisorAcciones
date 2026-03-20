@@ -66,7 +66,14 @@ const activeStocks = [
     { symbol: 'ARM', name: 'Arm Holdings' },
     { symbol: 'CRWD', name: 'Crowdstrike' },
     { symbol: 'SPOT', name: 'Spotify' },
-    { symbol: 'SMCI', name: 'Super Micro Computer' }
+    { symbol: 'SMCI', name: 'Super Micro Computer' },
+    { symbol: 'ORCL', name: 'Oracle Corp.' },
+    { symbol: 'UPST', name: 'Upstart Holdings' },
+    { symbol: 'YPF', name: 'YPF S.A. (ADR)' },
+    { symbol: 'MU', name: 'Micron Technology' },
+    { symbol: 'CVX', name: 'Chevron Corp.' },
+    { symbol: 'ADBE', name: 'Adobe Inc.' },
+    { symbol: 'GLOB', name: 'Globant S.A.' }
 ];
 
 const staticFundamentals = {
@@ -117,7 +124,14 @@ const staticFundamentals = {
     'ARM': { peRatio: 85.4, eps: 1.5, beta: 1.8, roe: 25.4 },
     'CRWD': { peRatio: 'N/A', eps: 0.8, beta: 1.9, roe: 'N/A' },
     'SPOT': { peRatio: 'N/A', eps: -1.2, beta: 1.6, roe: 'N/A' },
-    'SMCI': { peRatio: 42.1, eps: 20.5, beta: 2.1, roe: 45.8 }
+    'SMCI': { peRatio: 42.1, eps: 20.5, beta: 2.1, roe: 45.8 },
+    'ORCL': { peRatio: 35.5, eps: 5.2, beta: 1.05, roe: 30.5 },
+    'UPST': { peRatio: 'N/A', eps: -1.2, beta: 2.1, roe: -10.5 },
+    'YPF': { peRatio: 5.2, eps: 6.5, beta: 1.8, roe: 18.5 },
+    'MU': { peRatio: 18.5, eps: 7.8, beta: 1.3, roe: 22.5 },
+    'CVX': { peRatio: 14.5, eps: 12.5, beta: 0.9, roe: 15.5 },
+    'ADBE': { peRatio: 45.2, eps: 16.5, beta: 1.25, roe: 35.5 },
+    'GLOB': { peRatio: 40.5, eps: 4.8, beta: 1.4, roe: 16.5 }
 };
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
