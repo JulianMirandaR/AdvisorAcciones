@@ -284,7 +284,7 @@ const controlsContainer = document.querySelector('.controls-container');
 const tabs = document.querySelectorAll('.tab-btn');
 const marketStatus = document.getElementById('marketStatus');
 
-let currentTerm = 'short'; // 'short' or 'long'
+let currentTerm = 'all'; // 'all', 'short', 'long'
 const realDataService = new RealDataService();
 
 // Global container state
@@ -762,8 +762,8 @@ function renderChart(data, canvasId) {
     }
 
     // Determine how many days to show based on standard term
-    // short = 60 days (~3 months), long = 250 days (~1 year)
-    const pointsToShow = currentTerm === 'short' ? -60 : -250;
+    // all = 150 days (~6 months), long = 250 days (~1 year)
+    const pointsToShow = (currentTerm === 'short' || currentTerm === 'all') ? -150 : -250;
 
     const labels = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
     const prices = data.history.prices ? data.history.prices.slice(pointsToShow) : [];
