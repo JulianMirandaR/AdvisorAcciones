@@ -7,214 +7,274 @@ const chartInstances = {};
 
 // --- Logic para Memoria de Señales ---
 const signalMemory = {};
+let strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
+
+window.setStrategyMode = (mode) => {
+    strategyMode = mode;
+    if (typeof refreshUI === 'function') refreshUI();
+};
 
 // --- Logic for Recommendations ---
 
+// --- 1. MARKET REGIME ENGINE ---
 function getMarketCondition(vix) {
     if (vix < 20) return 'BULL';
     if (vix > 30) return 'BEAR';
-    return 'SIDEWAYS';
+    return 'LATERAL';
 }
 
-function analyzeStockWithMarketCondition(data, term, marketCondition = 'SIDEWAYS', portfolioInfo = null) {
-    let score = 0;
+// --- 2. TIMEFRAME & STRATEGY ENGINE ---
+function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo) {
+    let factors = { trend: 0, momentum: 0, reversal: 0, macro: 0, risk: 0 };
     let reasons = [];
-    let forbidBuy = false;
-    let actionFlag = null;
+    let setupDetected = null;
 
-    const addReason = (text, type, weight) => {
-        reasons.push({ text, type, weight });
-    };
+    const addReason = (text, type, weight) => reasons.push({ text, type, weight });
 
     const price = parseFloat(data.price) || 0;
-    const sma200 = parseFloat(data.sma200) || 0;
+    const rsi = typeof data.rsi !== 'undefined' ? parseFloat(data.rsi) : 50;
+    const macdHist = data.macd && typeof data.macd.histogram !== 'undefined' ? parseFloat(data.macd.histogram) : 0;
+    
+    // Simular EMA9 con un cruce veloz respecto a EMA20 si no existe
     const ema20 = parseFloat(data.ema20) || 0;
     const sma50 = parseFloat(data.sma50) || 0;
+    const sma200 = parseFloat(data.sma200) || 0;
     const support = parseFloat(data.support) || null;
     const resistance = parseFloat(data.resistance) || null;
-    const rsi = typeof data.rsi !== 'undefined' ? parseFloat(data.rsi) : 50;
     
-    const macdHist = data.macd && typeof data.macd.histogram !== 'undefined' ? parseFloat(data.macd.histogram) : 0;
-    const macdLine = data.macd && typeof data.macd.line !== 'undefined' ? parseFloat(data.macd.line) : 0;
-    const macdSig = data.macd && typeof data.macd.signal !== 'undefined' ? parseFloat(data.macd.signal) : 0;
-    
-    const stateKey = `${data.symbol}_${term}`;
+    // History prices for Momentum
+    let prices = [];
+    if (data.history && data.history.prices && data.history.prices.length >= 5) {
+        prices = data.history.prices;
+    }
+    const p1 = prices.length >= 2 ? parseFloat(prices[prices.length - 2]) : price;
+    const p5 = prices.length >= 6 ? parseFloat(prices[prices.length - 6]) : price;
+    const recentPct = p1 > 0 ? (price - p1) / p1 : 0;
+    const olderPct = p5 > 0 ? (p1 - p5) / p5 : 0;
 
-    // --- CONDICIÓN DE MERCADO ---
-    const marketConditionScore = (condition) => {
-        switch (condition) {
-            case 'BULL':
-                return { trendModifier: 1.5, buyStrength: 2 };
-            case 'SIDEWAYS':
-                return { trendModifier: 1, buyStrength: 1 };
-            case 'BEAR':
-                return { trendModifier: 0.5, buyStrength: 0.5 };
-            default:
-                return { trendModifier: 1, buyStrength: 1 };
+    // A. STRATEGY ENGINE
+    let trendScore = 0;
+    let reversalScore = 0;
+    let momentumScore = 0;
+    let isTrendUp = false;
+
+    // --- TREND LOGIC ---
+    if (isLongTerm) {
+        // Largo Plazo: basarse pesadamente en SMA200 y SMA50
+        if (sma200) {
+            if (price > sma200 * 1.05) {
+                trendScore += 5; isTrendUp = true; addReason("Tendencia Estructural Alcista Confirmada (P > SMA200+5%).", "positive", 100);
+            } else if (price > sma200) {
+                trendScore += 3; isTrendUp = true; addReason("Tendencia Estructural Positiva (P > SMA200).", "positive", 90);
+            } else {
+                trendScore -= 5; addReason("Estructura Bajista LP (P < SMA200).", "negative", 100);
+                factors.risk -= 3;
+            }
         }
-    };
-
-    const { trendModifier, buyStrength } = marketConditionScore(marketCondition);
-
-    if (marketCondition === 'BULL') {
-        score += 1.5;
-        addReason("Mercado BULL (VIX < 20): Mercado alcista. Se refuerzan las recomendaciones de compra.", "positive", 130);
-    } else if (marketCondition === 'BEAR') {
-        score -= 3;
-        forbidBuy = true;
-        addReason("Mercado BEAR (VIX > 30): Mercado bajista. Cautela general, se evitan las compras y se sugiere vender.", "negative", 130);
+        if (sma50 && sma200) {
+            if (sma50 > sma200) { trendScore += 2; addReason("Alineación Media Móvil LP (Golden Cross proxy).", "positive", 80); }
+            else { trendScore -= 2; }
+        }
+        
+        // Estructura de máximos (usando simple momentum array)
+        if (recentPct > olderPct && price > p5) { trendScore += 1; }
     } else {
-        addReason("Mercado SIDEWAYS (VIX 20-30): Mercado lateral. Recomendación neutral desde el punto de vista macroeconómico.", "neutral", 60);
+        // Corto Plazo: basarse en EMA impulsivas
+        if (ema20 && price > ema20) {
+            trendScore += 4; isTrendUp = true; addReason("Momentum CP Positivo (P > EMA20).", "positive", 90);
+        } else if (ema20) {
+            trendScore -= 4; addReason("Momentum CP Quebrado (P < EMA20).", "negative", 90);
+        }
+        if (ema20 && sma50 && ema20 > sma50) {
+            trendScore += 2; addReason("Alineación de Corto Alcista.", "positive", 80);
+        }
+        
+        // Pullback detectado en CP
+        if (isTrendUp && ema20 && Math.abs((price - ema20) / ema20) < 0.015 && recentPct > 0) {
+            setupDetected = "PULLBACK_EMA20";
+            trendScore += 3;
+            addReason("Pullback a EMA20 detectado. Continuación probable.", "positive", 100);
+        }
     }
 
-    // --- MÓDULOS DE ANÁLISIS AISLADOS ---
-
-    const evaluateTrend = () => {
-        let isUptrend = false;
-        let isDowntrend = false;
-        
-        const distFromEma = (ema20 && price > 0) ? (price - ema20) / ema20 : 0;
-        
-        if (distFromEma > 0.04) {
-            forbidBuy = true;
-            score -= 3 * trendModifier;
-            addReason(`Precio sobre-extendido (>4% sobre EMA20). Entradas prohibidas.`, "negative", 125);
-        }
-
-        if (sma200 && price < sma200) {
-            forbidBuy = true;
-            score -= 4 * trendModifier;
-            addReason(`Tendencia general bajista (Precio < SMA 200). Compras bloqueadas.`, "negative", 120);
-        }
-
-        if (term === 'short') {
-            const shortMa = ema20 || sma50;
-            if (ema20 && sma50 && price > ema20 && ema20 > sma50) {
-                isUptrend = true;
-                score += 4 * buyStrength;
-                addReason(`Tendencia alcista confirmada (Precio > EMA20 > SMA50)`, "positive", 110);
-                
-                const changePct = parseFloat(data.changePercent) || 0;
-                if (changePct < -2 && distFromEma > 0) {
-                    addReason(`Inercia activa: Retroceso diario pero tendencia intacta.`, "neutral", 90);
-                    score += 1;
-                }
-            } else {
-                forbidBuy = true;
-                if (price < shortMa) {
-                    isDowntrend = true;
-                    score -= 3 * trendModifier;
-                    addReason(`Estructura de corto plazo bajista o rota.`, "negative", 100);
-                } else {
-                    addReason(`En consolidación o débil.`, "neutral", 50);
-                }
-            }
-        } else {
-            if (sma200 && price > sma200) {
-                isUptrend = true;
-                score += 5 * buyStrength;
-                addReason(`Tendencia sólida de largo plazo (Precio > SMA 200)`, "positive", 110);
-            } else {
-                isDowntrend = true;
-                forbidBuy = true;
-            }
-        }
-
-        return { isUptrend, isDowntrend };
-    };
-
-    const evaluateMomentum = (trendStatus) => {
-        let isPositiveMomentum = false;
-        let isDecelerating = false;
-        let isStoppingFall = false;
-        let pScore = 0;
-
-        if (data.history && data.history.prices && data.history.prices.length >= 5) {
-            const p = data.history.prices;
-            const p2 = parseFloat(p[p.length - 3]) || 0;
-            const p4 = parseFloat(p[p.length - 5]) || 0;
-
-            const recentChange = p2 > 0 ? (price - p2) / p2 : 0;
-            const olderChange = p4 > 0 ? (p2 - p4) / p4 : 0;
-
-            if (price > p4) {
-                isPositiveMomentum = true;
-                if (recentChange < olderChange && recentChange >= 0) {
-                    isDecelerating = true;
-                    pScore = 0.5 * trendModifier;
-                    addReason(`Momentum alcista perdiendo fuerza (Desaceleración)`, "neutral", 85);
-                } else {
-                    pScore = 2 * buyStrength;
-                    addReason(`Momentum alcista acelerando`, "positive", 85);
-                }
-            } else {
-                if (recentChange > olderChange && olderChange < -0.01) {
-                    isStoppingFall = true;
-                    pScore = 0.5 * trendModifier;
-                    addReason(`Momentum negativo frenando (Posible suelo local)`, "positive", 85);
-                } else {
-                    pScore = -2 * trendModifier;
-                    addReason(`Momentum bajista continuo`, "negative", 85);
-                }
-            }
-        }
-        score += pScore;
-        return { isPositiveMomentum, isDecelerating, isStoppingFall };
-    };
-
-    const evaluateRSI = (trendStatus, momentumStatus) => {
-        if (rsi > 65) {
-            score -= 2 * trendModifier;
-            forbidBuy = true;
-            addReason(`RSI > 65. Entradas prohibidas (riesgo de techo local).`, "negative", 115);
-        } else if (rsi < 30) {
-            if (!momentumStatus.isPositiveMomentum) {
-                score -= 4 * trendModifier;
-                forbidBuy = true;
-                addReason(`RSI sobrevendido pero sin momentum alcista. Posible caída continua.`, "negative", 115);
-            } else {
-                score += 1 * buyStrength;
-                addReason(`RSI sobrevendido, pero con posible rebote`, "positive", 60);
-            }
-        }
-
-        return;
-    };
-
-    // --- ORQUESTACIÓN DEL FLUJO ---
+    // --- REVERSAL LOGIC ---
+    let isStoppingFall = (!isTrendUp && recentPct > olderPct && olderPct < -0.015);
     
-    const trendStatus = evaluateTrend();
-    const momentumStatus = evaluateMomentum(trendStatus);
-    evaluateRSI(trendStatus, momentumStatus);
-
-    if (forbidBuy && score > 4) {
-        score = 4; 
-        addReason("Score capado a MANTENER por bloqueos estrictos.", "neutral", 100);
+    if (rsi < 30) {
+        reversalScore += 5;
+        addReason(isLongTerm ? "Extremo de Sobrevenda LP (RSI < 30)" : "RSI Rápido Sobrevendido.", "positive", 90);
+        if (isStoppingFall) {
+            setupDetected = isLongTerm ? "DEEP_VALUE_BOTTOM" : "QUICK_REVERSAL_BOUNCE";
+            reversalScore += 4;
+            addReason("Setup: Frenado de caída con RSI crítico detectado.", "positive", 100);
+        }
+    } else if (rsi > 70) {
+        reversalScore -= 5;
+        factors.risk -= 4;
+        addReason(isLongTerm ? "Sobrecompra Estructural (RSI > 70)." : "RSI Rápido Sobrecomprado. Riesgo Pullback.", "negative", 90);
+    } else if (rsi < 40) {
+        reversalScore += 2; // Ligero valor
     }
 
-    let tentativeSignal = "NO OPERAR";
-    if (score >= 9) tentativeSignal = "COMPRA FUERTE";
-    else if (score >= 7) tentativeSignal = "COMPRA";
-    else if (score >= 5) tentativeSignal = "PRE-COMPRA";
-    else if (score >= 3) tentativeSignal = "MANTENER";
-    else if (score <= -9) tentativeSignal = "VENTA FUERTE";
-    else if (score <= -5) tentativeSignal = "VENTA";
+    if (support && Math.abs((price - support) / price) < 0.02) {
+        reversalScore += 3;
+        addReason("Precio testeando soporte histórico.", "positive", 80);
+    }
+    if (resistance && Math.abs((price - resistance) / price) < 0.02) {
+        reversalScore -= 3;
+        factors.risk -= 2;
+        addReason("Precio golpeando resistencia técnica.", "negative", 80);
+    }
 
-    // --- ESTABILIDAD DE SEÑALES ---
-    let finalSignal = tentativeSignal;
+    // --- MOMENTUM LOGIC ---
+    if (macdHist > 0) {
+        momentumScore += isLongTerm ? 2 : 4;
+        addReason("MACD Histograma Alcista.", "positive", 70);
+    } else if (macdHist < 0) {
+        momentumScore -= isLongTerm ? 2 : 4;
+    }
+    
+    if (recentPct > 0 && recentPct > olderPct) {
+        momentumScore += 3; addReason("Aceleración de precios.", "positive", 60);
+    } else if (recentPct < 0 && recentPct < olderPct) {
+        momentumScore -= 3;
+    }
 
-    signalMemory[stateKey] = { signal: finalSignal, score: score };
+    // --- MACRO LOGIC ---
+    if (regime === 'BULL') {
+        factors.macro = 4;
+        addReason("Regimen BULL favorece compras.", "positive", 50);
+    } else if (regime === 'BEAR') {
+        factors.macro = -4;
+        factors.risk -= 3;
+        addReason("Regimen BEAR: Alto riesgo en compras no-reversales.", "negative", 50);
+    }
+
+    // Adjust by Strategy Mode User Setting
+    if (strategyMode === 'trend') {
+        trendScore *= 1.5; reversalScore *= 0.5;
+    } else if (strategyMode === 'reversal') {
+        trendScore *= 0.5; reversalScore *= 1.5;
+    }
+
+    // Assign final raw metrics
+    factors.trend = Math.max(-10, Math.min(10, trendScore));
+    factors.reversal = Math.max(-10, Math.min(10, reversalScore));
+    factors.momentum = Math.max(-10, Math.min(10, momentumScore));
+    factors.risk = Math.max(-10, Math.min(0, factors.risk)); // Risk is only negative or 0
+    
+    // 3. SCORING ENGINE (NIVEL PROFESIONAL)
+    let finalScoreRaw = 0;
+    if (isLongTerm) {
+        // Largo Plazo: 35% Trend, 15% Mom, 15% Rev, 25% Macro, 10% Risk
+        finalScoreRaw = (factors.trend * 0.35) + (factors.momentum * 0.15) + (factors.reversal * 0.15) + (factors.macro * 0.25) + (factors.risk * 0.10);
+    } else {
+        // Corto Plazo: 25% Trend, 30% Mom, 30% Rev, 5% Macro, 10% Risk
+        finalScoreRaw = (factors.trend * 0.25) + (factors.momentum * 0.30) + (factors.reversal * 0.30) + (factors.macro * 0.05) + (factors.risk * 0.10);
+    }
+
+    // Expand slightly to fit [-10, 10] range effectively
+    finalScoreRaw = finalScoreRaw * 1.5;
+    let score = Math.max(-10, Math.min(10, finalScoreRaw));
+
+    let signal = "NEUTRAL / NO OPERAR";
+    if (score >= 8) signal = "COMPRA FUERTE";
+    else if (score >= 6) signal = "COMPRA";
+    else if (score >= 4) signal = "PRE-COMPRA";
+    else if (score >= 2) signal = "OBSERVAR";
+    else if (score >= -2) signal = "NEUTRAL / NO OPERAR";
+    else if (score >= -4) signal = "DEBIL / ALERTA";
+    else signal = "VENTA";
 
     reasons.sort((a, b) => b.weight - a.weight);
 
+    return { signal, score: Number(score.toFixed(1)), factors, reasons, setupDetected };
+}
+
+// Reemplazo exacto del orquestador anterior usando la firma requerida
+function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'SIDEWAYS', portfolioInfo = null) {
+    const cp = analyzeTimeframe(data, false, marketCondition, strategyMode, portfolioInfo);
+    const lp = analyzeTimeframe(data, true, marketCondition, strategyMode, portfolioInfo);
+    
+    // Conflicto Clave
+    let isConflict = false;
+    let conflictMsg = null;
+    const cpBull = cp.score >= 4;
+    const cpBear = cp.score <= -2;
+    const lpBull = lp.score >= 4;
+    const lpBear = lp.score <= -2;
+    
+    if (cpBull && lpBear) {
+        isConflict = true;
+        conflictMsg = "Corto plazo alcista, largo plazo bajista (Riesgo).";
+    } else if (cpBear && lpBull) {
+        isConflict = true;
+        conflictMsg = "Largo plazo alcista, corto plazo bajista (Oportunidad).";
+    }
+    
+    // Scoring combinado. CP tira un 60%, LP 40%.
+    let finalScore = (cp.score * 0.6) + (lp.score * 0.4);
+    
+    // Manejo de Portafolio
+    let actionFlag = null;
+    let trailingReason = null;
+    if (portfolioInfo && data.price) {
+        const currentReturn = (data.price - portfolioInfo.entryPrice) / portfolioInfo.entryPrice;
+        const trailingDrawdown = (portfolioInfo.highestPrice - data.price) / portfolioInfo.highestPrice;
+        
+        if (currentReturn < -0.05) { 
+            actionFlag = "STOP_LOSS"; 
+            finalScore -= 5; 
+            trailingReason = { text: "Stop Loss de portafolio alcanzado.", type: "negative", weight: 200 };
+        } else if (trailingDrawdown > 0.03 && currentReturn > 0.05) { 
+            actionFlag = "TAKE_PROFIT"; 
+            finalScore -= 3; 
+            trailingReason = { text: "Trailing Stop asegurando ganancia.", type: "negative", weight: 200 };
+        }
+    }
+
+    finalScore = Math.max(-10, Math.min(10, finalScore));
+
+    let signal = "NEUTRAL / NO OPERAR";
+    if (finalScore >= 8) signal = "COMPRA FUERTE";
+    else if (finalScore >= 6) signal = "COMPRA";
+    else if (finalScore >= 4) signal = "PRE-COMPRA";
+    else if (finalScore >= 2) signal = "OBSERVAR";
+    else if (finalScore >= -2) signal = "NEUTRAL / NO OPERAR";
+    else if (finalScore >= -4) signal = "DEBIL / ALERTA";
+    else signal = "VENTA";
+
+    const stateKey = `${data.symbol}_master`;
+    signalMemory[stateKey] = { signal, score: finalScore };
+
+    let combinedReasons = [];
+    if (trailingReason) combinedReasons.push(trailingReason);
+    if (isConflict) combinedReasons.push({ text: `CONFLICTO: ${conflictMsg}`, type: "neutral", weight: 150 });
+    
+    // Mezclamos un par de razones de CP y LP para la UI
+    combinedReasons = combinedReasons.concat(cp.reasons.slice(0,2)).concat(lp.reasons.slice(0,2));
+
+    const finalSetup = cp.setupDetected || lp.setupDetected;
+
     return { 
-        signal: finalSignal, 
-        score: Number(score.toFixed(1)), 
-        reasons, 
+        corto_plazo: cp,
+        largo_plazo: lp,
+        señal_final: signal, // Exact match to prompt
+        signal: signal,      // Compatibility backward match
+        score: Number(finalScore.toFixed(1)), // Compatibility
+        confianza: Math.min(100, Math.max(0, 50 + (finalScore * 5))),
+        contexto_mercado: marketCondition,
+        conflicto: isConflict ? conflictMsg : null,
+        factors: { 
+            trend: lp.factors.trend, 
+            momentum: cp.factors.momentum, 
+            reversal: cp.factors.reversal 
+        }, // Fallback for old UI
+        reasons: combinedReasons,
+        setupDetected: finalSetup,
         actionFlag 
     };
 }
-
 
 // --- UI Rendering ---
 
@@ -409,6 +469,12 @@ function createCardHTML(item) {
     const displaySymbol = isArg ? data.symbol.replace('.BA', '') : data.symbol;
     const flag = isArg ? ' <span style="font-size:0.8em">🇦🇷</span>' : '';
 
+    // Setup badge if generated
+    let setupHtml = '';
+    if (analysis.setupDetected) {
+        setupHtml = `<div style="margin-top:0.5rem;"><span style="background: var(--accent-blue); color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 0 8px var(--accent-blue);">🔥 SETUP DE ALTA PROBABILIDAD (${analysis.setupDetected.toUpperCase()})</span></div>`;
+    }
+
     card.innerHTML = `
         <div class="card-header">
             <div>
@@ -417,36 +483,53 @@ function createCardHTML(item) {
                 </div>
                 <div class="stock-name">${data.name}</div>
             </div>
-            <div class="recommendation-badge ${badgeClass}">${analysis.signal}</div>
+            <div style="text-align: right;">
+                <div class="recommendation-badge ${badgeClass}">${analysis.signal}</div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">Score: <b style="color:${analysis.score >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${analysis.score}</b>/10</div>
+            </div>
         </div>
         
         <div class="price-section">
             <div class="current-price">$${data.price}</div>
             <div class="price-change ${changeClass}">${changeSign}${data.change} (${changeSign}${data.changePercent}%)</div>
-            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem;">
+            ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
+            <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px;">+ Portafolio</button>
                 <button onclick="openTradingViewModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow);">📊 Gráfico Interactivo</button>
             </div>
+            ${setupHtml}
         </div>
 
+        <div class="analysis-grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
+            <div style="background:var(--card-bg); padding:0.5rem; border-radius:4px; border:1px solid var(--border-color);">
+                <div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px; font-weight:bold;">CORTO PLAZO (Swing)</div>
+                <div style="font-size:0.9rem; font-weight:bold; color:${analysis.corto_plazo.score >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${analysis.corto_plazo.signal}</div>
+                <div style="font-size:0.75rem;">Score: ${analysis.corto_plazo.score}/10</div>
+            </div>
+            <div style="background:var(--card-bg); padding:0.5rem; border-radius:4px; border:1px solid var(--border-color);">
+                <div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:4px; font-weight:bold;">LARGO PLAZO (Posición)</div>
+                <div style="font-size:0.9rem; font-weight:bold; color:${analysis.largo_plazo.score >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${analysis.largo_plazo.signal}</div>
+                <div style="font-size:0.75rem;">Score: ${analysis.largo_plazo.score}/10</div>
+            </div>
+        </div>
+        
         <div class="analysis-grid">
             <div class="analysis-item">
-                <span class="analysis-label">RSI</span>
+                <span class="analysis-label">RSI Rápido</span>
                 <span class="analysis-value" style="color: ${data.rsi < 30 || data.rsi > 70 ? 'var(--accent-blue)' : 'inherit'}">${data.rsi}</span>
             </div>
             <div class="analysis-item">
-                <span class="analysis-label">Soporte/Resist.</span>
-                <span class="analysis-value">${data.support} / ${data.resistance}</span>
+                <span class="analysis-label">Tendencia LP</span>
+                <span class="analysis-value">${data.price > data.sma200 ? 'Alcista' : 'Bajista'}</span>
             </div>
             <div class="analysis-item">
-                <span class="analysis-label">Media (${currentTerm === 'short' ? 'EMA20' : 'SMA200'})</span>
-                <span class="analysis-value">${currentTerm === 'short' ? (data.ema20 || data.sma50) : data.sma200}</span>
+                <span class="analysis-label">Confianza</span>
+                <span class="analysis-value">${analysis.confianza.toFixed(0)}%</span>
             </div>
             <div class="analysis-item">
-                <span class="analysis-label">MACD</span>
-                <span class="analysis-value">${data.macd.histogram > 0 ? 'Alcista' : 'Bajista'}</span>
+                <span class="analysis-label">Régimen Macro</span>
+                <span class="analysis-value">${analysis.contexto_mercado}</span>
             </div>
-            ${fundamentalHtml}
         </div>
 
         <div class="signals-section">
@@ -799,20 +882,40 @@ function renderChart(data, canvasId) {
  * @param {Array} stockHistory - Array de días (Ej: resultado de un mapeo previo que contenga { price, rsi, macd, ema20... })
  * @param {String} term - "short" (por defecto) o "long"
  */
-window.runBacktest = function(stockHistory, term = 'short') {
+window.runBacktest = function(stockHistory, config = {}) {
     if (!Array.isArray(stockHistory) || stockHistory.length === 0) {
-        console.error("Backtest falló: stockHistory debe ser un arreglo con datos estructurados para analyzeStock.");
+        console.error("Backtest falló: stockHistory vacio o invalido.");
         return null; 
     }
 
-    let capital = 1000;
-    let position = null; // null si no hay compradas, { entryPrice, highestPrice, qty } si sí
+    // Compatibilidad si pasan el segundo parametro como term (fallback a old API)
+    if (typeof config === 'string') {
+        config = { term: config };
+    }
+
+    const {
+        capital = 1000,
+        positionSizePct = 1.0,  // 1.0 = 100%
+        stopLossPct = -5.0,     // % 
+        takeProfitPct = 10.0,   // %
+        trailingStopPct = null, // %
+        slippagePct = 0.2,
+        commissionPct = 0.1,
+        term = 'short',
+        marketCondition = 'SIDEWAYS'
+    } = config;
+
+    let currentCapital = capital;
+    let position = null; // { entryPrice, qty, highestPrice, investedAmount }
+    
     let totalTrades = 0;
     let winningTrades = 0;
-    let maxDrawdown = 0;
+    let grossProfit = 0;
+    let grossLoss = 0;
     let peakCapital = capital;
+    let maxDrawdown = 0;
 
-    console.log(`[Backtest] Iniciando simulación en ${stockHistory.length} días...`);
+    console.log(`[Backtest] Iniciando simulación en ${stockHistory.length} días (Estrategia: ${typeof strategyMode !== 'undefined' ? strategyMode : 'hybrid'}, Modo: ${term})`);
 
     stockHistory.forEach((dayData, index) => {
         const currentPrice = parseFloat(dayData.price);
@@ -820,7 +923,6 @@ window.runBacktest = function(stockHistory, term = 'short') {
 
         let portfolioInfo = null;
         if (position) {
-            // Actualizar Tracker de Highest Price
             if (currentPrice > position.highestPrice) {
                 position.highestPrice = currentPrice;
             }
@@ -830,34 +932,70 @@ window.runBacktest = function(stockHistory, term = 'short') {
             };
         }
 
-        // Llamada nativa a tu capa de análisis exacta
-        const analysis = analyzeStock(dayData, term, portfolioInfo);
-        const signal = analysis.signal;
+        const analysis = analyzeStockWithMarketCondition(dayData, term, marketCondition, portfolioInfo);
+        // By default use master signal, unless testing specific term
+        let signal = analysis.signal;
+        if (term === 'short') signal = analysis.corto_plazo.signal;
+        else if (term === 'long') signal = analysis.largo_plazo.signal;
 
         if (!position) {
-            // Buscando entrar (Ignoramos si bloqueado e intentamos cuando hay setup real)
+            // Evaluando entrada
             if (signal.includes("COMPRA") || signal.includes("PRE-COMPRA")) {
-                const qty = capital / currentPrice;
+                const investAmount = currentCapital * positionSizePct;
+                const priceWithSlippage = currentPrice * (1 + (slippagePct / 100));
+                const commission = investAmount * (commissionPct / 100);
+                
+                const finalInvestAmount = investAmount - commission;
+                const qty = finalInvestAmount / priceWithSlippage;
+
                 position = {
-                    entryPrice: currentPrice,
+                    entryPrice: priceWithSlippage,
                     qty: qty,
-                    highestPrice: currentPrice
+                    highestPrice: priceWithSlippage,
+                    investedAmount: investAmount
                 };
+                currentCapital -= investAmount;
                 totalTrades++;
             }
         } else {
-            // Buscando salir
-            if (signal.includes("VENTA") || analysis.actionFlag) { // Incluye VENTA, VENTA FUERTE y flags dinámicos TS / TP
-                const profit = (currentPrice - position.entryPrice) * position.qty;
-                capital = currentPrice * position.qty; // Reinvertimos / Liquidamos
+            // Evaluando salida
+            let exitReason = null;
+            const floatProfitPct = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+            
+            if (floatProfitPct <= stopLossPct) {
+                exitReason = "STOP_LOSS";
+            } else if (floatProfitPct >= takeProfitPct) {
+                exitReason = "TAKE_PROFIT";
+            } else if (trailingStopPct !== null) {
+                const drawdownFromPeak = ((position.highestPrice - currentPrice) / position.highestPrice) * 100;
+                if (drawdownFromPeak >= trailingStopPct) {
+                    exitReason = "TRAILING_STOP";
+                }
+            } else if (signal.includes("VENTA")) {
+                exitReason = "SIGNAL_SELL";
+            }
 
-                if (profit > 0) winningTrades++;
-                position = null; 
+            if (exitReason) {
+                const priceWithSlippage = currentPrice * (1 - (slippagePct / 100));
+                const grossVal = position.qty * priceWithSlippage;
+                const commission = grossVal * (commissionPct / 100);
+                const netVal = grossVal - commission;
+
+                currentCapital += netVal;
+
+                const tradeProfit = netVal - position.investedAmount;
+                if (tradeProfit > 0) {
+                    winningTrades++;
+                    grossProfit += tradeProfit;
+                } else {
+                    grossLoss += Math.abs(tradeProfit);
+                }
+
+                position = null;
             }
         }
 
-        // Evaluar Max Drawdown
-        const currentEquity = position ? (currentPrice * position.qty) : capital;
+        const currentEquity = currentCapital + (position ? (currentPrice * position.qty) : 0);
         if (currentEquity > peakCapital) {
             peakCapital = currentEquity;
         } else {
@@ -866,24 +1004,39 @@ window.runBacktest = function(stockHistory, term = 'short') {
         }
     });
 
-    // Cerrar forzosamente cualquier posición abierta al final
     if (position) {
         const lastPrice = parseFloat(stockHistory[stockHistory.length - 1].price);
-        capital = lastPrice * position.qty;
-        const finalProfit = (lastPrice - position.entryPrice) * position.qty;
-        if (finalProfit > 0) winningTrades++;
+        const priceWithSlippage = lastPrice * (1 - (slippagePct / 100));
+        const grossVal = position.qty * priceWithSlippage;
+        const commission = grossVal * (commissionPct / 100);
+        const netVal = grossVal - commission;
+
+        currentCapital += netVal;
+        const tradeProfit = netVal - position.investedAmount;
+        if (tradeProfit > 0) {
+            winningTrades++;
+            grossProfit += tradeProfit;
+        } else {
+            grossLoss += Math.abs(tradeProfit);
+        }
     }
 
-    const profitPercent = ((capital - 1000) / 1000) * 100;
+    const profitTotalVal = currentCapital - capital;
+    const profitPercent = (profitTotalVal / capital) * 100;
     const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+    const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
+    // Sharpe Ratio simplificado (rendimiento / max drawdown) solo referencial
+    const sharpeRatio = maxDrawdown > 0 ? (profitPercent / maxDrawdown) : 0;
 
     const result = {
-        initialCapital: '$1000.00',
-        finalCapital: `$${capital.toFixed(2)}`,
-        profitPercent: `${profitPercent.toFixed(2)}%`,
+        initialCapital: `$${capital.toFixed(2)}`,
+        finalCapital: `$${currentCapital.toFixed(2)}`,
+        profitTotal: `$${profitTotalVal.toFixed(2)} (${profitPercent.toFixed(2)}%)`,
         totalTrades: totalTrades,
         winRate: `${winRate.toFixed(2)}%`,
-        maxDrawdown: `${maxDrawdown.toFixed(2)}%`
+        maxDrawdown: `${maxDrawdown.toFixed(2)}%`,
+        profitFactor: profitFactor === Infinity ? "Infinity" : profitFactor.toFixed(2),
+        sharpeRatio: sharpeRatio.toFixed(2)
     };
 
     console.table(result);
