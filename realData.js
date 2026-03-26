@@ -106,7 +106,36 @@ export class RealDataService {
             });
 
             if (changes || currentCache.length === 0) {
-                localStorage.setItem(cacheKey, JSON.stringify(mergedList));
+                try {
+                    // Limpiar cachés antiguos para liberar espacio en localStorage
+                    const keysToRemove = [];
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('stocks_cache_') && key !== cacheKey) {
+                            keysToRemove.push(key);
+                        }
+                    }
+                    keysToRemove.forEach(k => localStorage.removeItem(k));
+
+                    try {
+                        localStorage.setItem(cacheKey, JSON.stringify(mergedList));
+                    } catch (quotaExceededError) {
+                        console.warn("Quota exceeded a pesar de limpiar. Guardando versión ligera sin historial completo.", quotaExceededError);
+                        // Limpiar todos los datos pesados para que el localStorage pueda guardarlo
+                        const lightList = mergedList.map(stock => {
+                            const { history, ...rest } = stock;
+                            // Dejamos al menos los últimos 6 precios en history ya que se usan para momentum (p1 y p5) en app.js
+                            if (history && history.prices && history.prices.length >= 6) {
+                                rest.history = { prices: history.prices.slice(-6) };
+                            }
+                            return rest;
+                        });
+                        localStorage.setItem(cacheKey, JSON.stringify(lightList));
+                    }
+                } catch (err) {
+                    console.error("Error gestionando caché:", err);
+                }
+                
                 onStockLoaded(mergedList);
             }
             if (onProgressMsg) onProgressMsg("Datos de mercado actualizados exitosamente.");

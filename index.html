@@ -32,9 +32,12 @@
                     Mercado</h4>
                 <div id="marketHeatmap" class="heatmap-container"></div>
 
+
+
                 <div class="tabs">
                     <button class="tab-btn active" data-term="all">📊 Análisis General</button>
                     <button class="tab-btn" data-term="portfolio" style="margin-left: auto; background-color: var(--accent-blue); color: white;">📁 Mi Portafolio</button>
+                    <button class="tab-btn" data-term="historial">📜 Historial</button>
                 </div>
 
                 <div class="controls-container">
@@ -54,9 +57,14 @@
                     <!-- Stock cards will be injected here -->
                 </main>
 
-                <main id="portfolio-container" style="display: none;">
+                <main id="portfolio-container" style="display: none; width: 100%;">
                     <!-- Portfolio content will be injected here -->
                 </main>
+
+                <main id="historial-container" style="display: none; width: 100%;">
+                    <!-- Historial content -->
+                </main>
+
             </div>
 
             <div class="dashboard-sidebar">
@@ -88,6 +96,54 @@
                     <div class="macro-value" id="us10yValue">--</div>
                     <div class="macro-desc" id="us10yRecommendation"
                         style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;"></div>
+                </div>
+            </div>
+        </div>
+
+        
+        <!-- Backtesting Modal FASE 1 -->
+        <div id="backtestModal" class="modal">
+            <div class="modal-content" style="max-width: 900px;">
+                <span style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('backtestModal').style.display='none'">&times;</span>
+                <h2 id="btSymbolTitle" style="margin-bottom: 1rem;">Simulación de Estrategia</h2>
+                
+                <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; background: var(--hover-bg); padding: 1rem; border-radius: 8px;">
+                    <div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Capital ($)</label><br>
+                        <input type="number" id="btCapital" value="10000" style="padding:0.3rem; border-radius:4px; width:100px;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Stop Loss (%)</label><br>
+                        <input type="number" id="btSl" value="5" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Take Profit (%)</label><br>
+                        <input type="number" id="btTp" value="15" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Trailing (%)</label><br>
+                        <input type="number" id="btTs" value="3" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem; color:var(--text-secondary);">Estrategia</label><br>
+                        <select id="btTerm" style="padding:0.3rem; border-radius:4px;">
+                            <option value="all">Híbrida (Máster)</option>
+                            <option value="short">Swing (Corto P.)</option>
+                            <option value="long">Trend (Largo P.)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; align-items:flex-end;">
+                        <button onclick="executeBacktestUI()" style="background:var(--accent-blue); color:white; border:none; padding:0.4rem 1rem; border-radius:4px; cursor:pointer; font-weight:bold;">Simular</button>
+                    </div>
+                </div>
+
+                <div id="btResults" style="display:flex; justify-content:space-between; flex-wrap:wrap; margin-bottom:1rem; padding: 1rem; border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.9rem;">
+                    <!-- Results injected here -->
+                    Esperando ejecución...
+                </div>
+
+                <div class="chart-wrapper" style="height: 300px; width: 100%;">
+                    <canvas id="btChart"></canvas>
                 </div>
             </div>
         </div>

@@ -163,11 +163,23 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     factors.momentum = Math.max(-10, Math.min(10, momentumScore));
     factors.risk = Math.max(-10, Math.min(0, factors.risk)); // Risk is only negative or 0
     
+    // FASE 4: Fundamental Score Logic
+    let fundamentalScoreRaw = 0;
+    if (isLongTerm) {
+        const pe = parseFloat(data.peRatio);
+        if (!isNaN(pe) && pe > 0 && pe < 15) { fundamentalScoreRaw += 2; addReason("PER Atractivo (< 15).", "positive", 60); }
+        if (data.epsGrowth !== 'N/A' && parseFloat(data.epsGrowth) > 5) { fundamentalScoreRaw += 2; addReason("Fuerte Crecimiento EPS.", "positive", 60); }
+        if (data.roe !== 'N/A' && parseFloat(data.roe) > 15) { fundamentalScoreRaw += 1; addReason("Alta Rentabilidad (ROE > 15%).", "positive", 50); }
+    }
+    const fundamentalScore = Math.max(0, Math.min(5, fundamentalScoreRaw)) * 2; // scale to 10
+    factors.fundamental = isLongTerm ? fundamentalScore : 0;
+
     // 3. SCORING ENGINE (NIVEL PROFESIONAL)
     let finalScoreRaw = 0;
     if (isLongTerm) {
-        // Largo Plazo: 35% Trend, 15% Mom, 15% Rev, 25% Macro, 10% Risk
-        finalScoreRaw = (factors.trend * 0.35) + (factors.momentum * 0.15) + (factors.reversal * 0.15) + (factors.macro * 0.25) + (factors.risk * 0.10);
+        // Largo Plazo (Actualizado con Fundamentales 10%): 
+        // 30% Trend, 15% Mom, 10% Rev, 25% Macro, 10% Risk, 10% Fundamental
+        finalScoreRaw = (factors.trend * 0.30) + (factors.momentum * 0.15) + (factors.reversal * 0.10) + (factors.macro * 0.25) + (factors.risk * 0.10) + (factors.fundamental * 0.10);
     } else {
         // Corto Plazo: 25% Trend, 30% Mom, 30% Rev, 5% Macro, 10% Risk
         finalScoreRaw = (factors.trend * 0.25) + (factors.momentum * 0.30) + (factors.reversal * 0.30) + (factors.macro * 0.05) + (factors.risk * 0.10);
@@ -296,6 +308,10 @@ let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
 let portfolio = JSON.parse(localStorage.getItem('advisor_portfolio') || '[]');
+
+let closedTrades = JSON.parse(localStorage.getItem('advisor_closed_trades') || '[]');
+const historialContainer = document.getElementById('historial-container');
+
 window.portfolioTerm = 'short'; // Plazo por defecto en la pestaña Mi Portafolio
 
 window.togglePortfolioTerm = (term) => {
@@ -372,16 +388,34 @@ function refreshUI() {
         container.innerHTML = '';
     }
 
+    // FASE 2: Historial Tab support
     if (currentTerm === 'portfolio') {
         container.style.display = 'none';
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'block';
+        if (historialContainer) historialContainer.style.display = 'none';
+        
+
+        
         renderPortfolio();
         return;
-    } else {
-        container.style.display = ''; // Restore to default CSS (grid)
-        controlsContainer.style.display = ''; // Restore flex
+    } else if (currentTerm === 'historial') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'block';
+        
+
+        
+        renderHistorial();
+        return;
+    } else {
+        container.style.display = ''; 
+        controlsContainer.style.display = ''; 
+        portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'none';
+        
+
     }
 
     // --- Filter & Search Logic ---
@@ -419,6 +453,10 @@ function refreshUI() {
 
     // Sort by Score (Best opportunities first)
     analyzedStocks.sort((a, b) => b.analysis.score - a.analysis.score);
+
+
+
+
 
     // Render
     analyzedStocks.forEach(item => {
@@ -494,8 +532,9 @@ function createCardHTML(item) {
             <div class="price-change ${changeClass}">${changeSign}${data.change} (${changeSign}${data.changePercent}%)</div>
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px;">+ Portafolio</button>
-                <button onclick="openTradingViewModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow);">📊 Gráfico Interactivo</button>
+                <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
+                <button onclick="openTradingViewModal('${data.symbol}')" style="background:transparent; border:1px solid var(--accent-blue); color:var(--accent-blue); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--accent-blue)'; this.style.color='white'" onmouseout="this.style.background='transparent'; this.style.color='var(--accent-blue)'">📊 Gráfico</button>
+                <button onclick="openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
             </div>
             ${setupHtml}
         </div>
@@ -590,6 +629,26 @@ window.toggleWatchlist = (symbol, event) => {
 };
 
 window.removeFromPortfolio = (index) => {
+    // FASE 2: Register trade before removing
+    const pos = portfolio[index];
+    const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
+    if (stockData) {
+        const currentPrice = parseFloat(stockData.price);
+        const profit = (currentPrice - pos.price) * pos.qty;
+        const profitPct = ((currentPrice - pos.price) / pos.price) * 100;
+        
+        closedTrades.push({
+            symbol: pos.symbol,
+            entryPrice: pos.price,
+            exitPrice: currentPrice,
+            qty: pos.qty,
+            profit: profit,
+            profitPct: profitPct,
+            date: new Date().toISOString()
+        });
+        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
+    }
+
     portfolio.splice(index, 1);
     localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
     renderPortfolio();
@@ -726,13 +785,19 @@ function renderPortfolio() {
     const summaryColor = totalPl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
     const summarySign = totalPl >= 0 ? '+' : '';
 
-    const summaryHtml = `
-        <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
+    const summaryHtml = `        <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Inversión Total</span><br><b style="font-size: 1.25rem;">$${totalInvestment.toFixed(2)}</b></div>
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Valor Actual</span><br><b style="font-size: 1.25rem;">$${totalValue.toFixed(2)}</b></div>
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Rendimiento Total</span><br><b style="color:${summaryColor}; font-size: 1.25rem;">${summarySign}$${totalPl.toFixed(2)} (${summarySign}${totalPlPct.toFixed(2)}%)</b></div>
         </div>
-    `;
+        
+        <!-- FASE 5: PIE CHART -->
+        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem; margin-bottom: 1rem; padding: 1rem; background: var(--card-bg); border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="width: 250px; height: 250px;">
+                <canvas id="portfolioPieChart"></canvas>
+            </div>
+        </div>
+`;
 
     const toggleHtml = `
         <div style="margin-bottom: 1rem; text-align: right;">
@@ -743,6 +808,52 @@ function renderPortfolio() {
     `;
 
     portfolioContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Analítica de Portafolio</h3>' + summaryHtml + toggleHtml + tableHtml;
+
+    // Render Phase 5 Pie
+    setTimeout(() => {
+        if(window.portPieChart) window.portPieChart.destroy();
+        const ctxPie = document.getElementById('portfolioPieChart');
+        if(!ctxPie) return;
+        
+        const labels = portfolio.map(p => p.symbol);
+        const dataValues = portfolio.map(p => {
+            const st = globalStocksData.find(s => s.symbol === p.symbol);
+            return st ? (st.price * p.qty) : (p.price * p.qty);
+        });
+        
+        window.portPieChart = new Chart(ctxPie, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: dataValues,
+                    backgroundColor: ['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e', '#ec4899', '#14b8a6', '#f97316'],
+                    borderWidth: 0,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'right', labels: { color: '#f9fafb', font: {size: 11} } },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.label || '';
+                                if (label) { label += ': '; }
+                                if (context.parsed !== null) {
+                                    label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }, 100);
+
 }
 
 // Init
@@ -1460,4 +1571,220 @@ function renderNewMacroIndicators() {
         }
     }
 }
+
+
+
+function renderHistorial() {
+    if (!historialContainer) return;
+    historialContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Historial de Operaciones</h3>';
+    
+    if (closedTrades.length === 0) {
+        historialContainer.innerHTML += '<p style="color:var(--text-secondary);">No hay operaciones cerradas registradas.</p>';
+        return;
+    }
+
+    let wins = 0;
+    let netProfit = 0;
+    
+    let tableHtml = `
+    <div style="overflow-x: auto;">
+    <table style="width:100%; text-align:left; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem;">
+        <thead>
+            <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
+                <th style="padding: 0.75rem;">Fecha</th>
+                <th style="padding: 0.75rem;">Activo</th>
+                <th style="padding: 0.75rem;">Entrada</th>
+                <th style="padding: 0.75rem;">Salida</th>
+                <th style="padding: 0.75rem;">P/L ($)</th>
+                <th style="padding: 0.75rem;">P/L (%)</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    // Sort by most recent
+    const sortedTrades = [...closedTrades].reverse();
+
+    sortedTrades.forEach(trade => {
+        if (trade.profit > 0) wins++;
+        netProfit += trade.profit;
+        
+        const dateStr = new Date(trade.date).toLocaleDateString();
+        const color = trade.profit >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+        const sign = trade.profit >= 0 ? "+" : "";
+
+        tableHtml += `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 0.75rem; color:var(--text-secondary);">${dateStr}</td>
+                <td style="padding: 0.75rem; font-weight: bold;">${trade.symbol}</td>
+                <td style="padding: 0.75rem;">$${trade.entryPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">$${trade.exitPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}$${trade.profit.toFixed(2)}</td>
+                <td style="padding: 0.75rem; color:${color};">${sign}${trade.profitPct.toFixed(2)}%</td>
+            </tr>
+        `;
+    });
+
+    tableHtml += '</tbody></table></div>';
+    
+    const winRate = (wins / closedTrades.length) * 100;
+    const netColor = netProfit >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+    const netSign = netProfit >= 0 ? "+" : "";
+
+    const statsHtml = `
+        <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Operaciones</span><br><b style="font-size: 1.25rem;">${closedTrades.length}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Win Rate</span><br><b style="font-size: 1.25rem;">${winRate.toFixed(1)}%</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Beneficio Neto</span><br><b style="color:${netColor}; font-size: 1.25rem;">${netSign}$${netProfit.toFixed(2)}</b></div>
+        </div>
+    `;
+
+    historialContainer.innerHTML += statsHtml + tableHtml;
+}
+
+
+// --- FASE 1: VISUAL BACKTESTING ---
+let btChartInstance = null;
+
+window.openBacktestModal = (symbol) => {
+    document.getElementById('backtestModal').style.display = 'block';
+    window.currentBtSymbol = symbol;
+    document.getElementById('btSymbolTitle').innerText = `Simulando Oportunidad - ${symbol}`;
+    // We execute default instantly
+    executeBacktestUI();
+};
+
+window.executeBacktestUI = () => {
+    if (!window.currentBtSymbol) return;
+    
+    document.getElementById('btResults').innerHTML = 'Simulando pacientemente...';
+    
+    // Slight timeout for UI refresh
+    setTimeout(() => {
+        const symbol = window.currentBtSymbol;
+        const config = {
+            capital: parseFloat(document.getElementById('btCapital').value) || 10000,
+            stopLossPct: parseFloat(document.getElementById('btSl').value) / 100 || 0.05,
+            takeProfitPct: parseFloat(document.getElementById('btTp').value) / 100 || 0.15,
+            trailingStopPct: parseFloat(document.getElementById('btTs').value) / 100 || 0.03,
+            term: document.getElementById('btTerm').value
+        };
+        
+        const stockData = globalStocksData.find(s => s.symbol === symbol);
+        if (!stockData || !stockData.history || !stockData.history.prices || stockData.history.prices.length < 50) {
+            document.getElementById('btResults').innerHTML = '<span style="color:var(--accent-red);">Error: No hay historial de datos para simular ('+symbol+').</span>';
+            return;
+        }
+        
+        let stockHistory = [];
+        const h = stockData.history;
+        for(let i = 50; i < h.prices.length; i++) {
+            stockHistory.push({
+                symbol: symbol,
+                price: h.prices[i],
+                ema20: h.ema20 ? h.ema20[i] : null,
+                sma50: h.sma50 ? h.sma50[i] : null,
+                sma200: h.sma200 ? h.sma200[i] : null,
+                rsi: h.rsi ? h.rsi[i] : 50,
+                macd: { histogram: (h.macd && h.macd[i]) ? h.macd[i].histogram : 0 },
+                support: stockData.support,
+                resistance: stockData.resistance,
+                peRatio: stockData.peRatio,
+                epsGrowth: stockData.epsGrowth,
+                roe: stockData.roe,
+                history: {
+                    prices: h.prices.slice(0, i + 1),
+                    macd: h.macd ? h.macd.slice(0, i + 1) : []
+                },
+                date: h.dates[i]
+            });
+        }
+
+        const results = window.runBacktest(stockHistory, config);
+        
+        if (!results) {
+            document.getElementById('btResults').innerHTML = 'Error en backtest (sin datos).';
+            return;
+        }
+
+        const colorClasses = results.totalReturn >= 0 ? "var(--accent-green)" : "var(--accent-red)";
+        
+        document.getElementById('btResults').innerHTML = `
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">CAPITAL FINAL</span><br><b style="font-size:1.2rem; color:${colorClasses};">$${results.finalCapital.toFixed(2)}</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">RETORNO</span><br><b style="font-size:1.2rem; color:${colorClasses};">${(results.totalReturn*100).toFixed(2)}%</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">WIN RATE</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${(results.winRate*100).toFixed(1)}%</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">MAX DRAWDOWN</span><br><b style="font-size:1.2rem; color:var(--accent-red);">${(results.maxDrawdown*100).toFixed(1)}%</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">PROFIT FACTOR</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.profitFactor}</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">TRADES</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.trades.length}</b></div>
+        `;
+
+        if (btChartInstance) {
+            btChartInstance.destroy();
+        }
+
+        const ctx = document.getElementById('btChart').getContext('2d');
+        const labels = results.equityCurve.map(x => x.date);
+        const dataEq = results.equityCurve.map(x => x.value);
+
+        // Fetch original price history overlay
+        /* stockData fetched above */
+        let dataPrice = [];
+        if (stockData && stockData.history) {
+            const startIdx = stockData.history.dates.indexOf(labels[0]);
+            if (startIdx !== -1) {
+                dataPrice = stockData.history.prices.slice(startIdx);
+            }
+        }
+
+        btChartInstance = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Curva de Capital (Equity)',
+                        data: dataEq,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderWidth: 2,
+                        yAxisID: 'y',
+                        fill: true,
+                        tension: 0.1,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Precio Activo',
+                        data: dataPrice.length > 0 ? dataPrice : null,
+                        borderColor: '#9ca3af',
+                        borderWidth: 1,
+                        yAxisID: 'y1',
+                        fill: false,
+                        tension: 0.1,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#f9fafb' } }
+                },
+                scales: {
+                    x: { ticks: { color: '#9ca3af' }, grid: { color: '#1f2937' } },
+                    y: { 
+                        type: 'linear', display: true, position: 'left',
+                        ticks: { color: '#0ea5e9' }, grid: { color: '#1f2937' }
+                    },
+                    y1: { 
+                        type: 'linear', display: true, position: 'right',
+                        ticks: { color: '#9ca3af' }, grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+
+    }, 100);
+};
 
