@@ -1,6 +1,7 @@
 // --- Analysis Logic ---
 // (Note: `stocks` array and `generateStockData` removed as requested)
 import { RealDataService } from './realData.js';
+import { runAIPrediction } from './mlModel.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
@@ -12,6 +13,40 @@ let strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 window.setStrategyMode = (mode) => {
     strategyMode = mode;
     if (typeof refreshUI === 'function') refreshUI();
+};
+
+window.predictAI = async (symbol) => {
+    const stockData = globalStocksData.find(s => s.symbol === symbol);
+    if (!stockData) return;
+    
+    const btn = document.getElementById(`btn-ai-${symbol}`);
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⚙️ Pensando...';
+    btn.disabled = true;
+    
+    try {
+        const result = await runAIPrediction(stockData);
+        if (result.error) {
+            alert(result.error);
+            btn.innerHTML = originalText;
+        } else {
+            const probPct = (result.probability * 100).toFixed(1);
+            const move = result.probability > 0.5 ? "SUBIR 📈" : "BAJAR 📉";
+            
+            alert(`🧠 Mente Maestra IA de Mercado para ${symbol}:\n\nEntrenando una Red Neuronal iterativa con los últimos ${result.daysTrained} días de historia de precios...\n\nRESULTADO:\nHay un ${probPct}% de probabilidad de que la acción vaya a ${move} en los próximos días basándose en el patrón secuencial reciente.\n\nNivel de certidumbre del patrón: ${result.confidence.toFixed(1)}/100`);
+            
+            // Mark button with result
+            btn.innerHTML = `${probPct}% de Subir`;
+            btn.style.background = result.probability > 0.5 ? "var(--accent-green)" : "var(--accent-red)";
+            btn.style.boxShadow = "none";
+        }
+    } catch (e) {
+        console.error("AI Error:", e);
+        alert("Hubo un error calculando con IA: " + e.message);
+        btn.innerHTML = originalText;
+    } finally {
+        btn.disabled = false;
+    }
 };
 
 // --- Logic for Recommendations ---
@@ -533,8 +568,8 @@ function createCardHTML(item) {
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
-                <button onclick="openTradingViewModal('${data.symbol}')" style="background:transparent; border:1px solid var(--accent-blue); color:var(--accent-blue); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--accent-blue)'; this.style.color='white'" onmouseout="this.style.background='transparent'; this.style.color='var(--accent-blue)'">📊 Gráfico</button>
                 <button onclick="openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
+                <button onclick="window.predictAI('${data.symbol}')" id="btn-ai-${data.symbol}" style="background:#8b5cf6; border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: 0 0 5px rgba(139, 92, 246, 0.5); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">🧠 IA Predict</button>
             </div>
             ${setupHtml}
         </div>
@@ -578,7 +613,7 @@ function createCardHTML(item) {
             </ul>
         </div>
 
-        <div class="chart-wrapper">
+        <div class="chart-wrapper" onclick="openTradingViewModal('${data.symbol}')" style="cursor: pointer; transition: 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="Ver Gráfico Avanzado">
             <canvas id="chart-${data.symbol}"></canvas>
         </div>
     `;
