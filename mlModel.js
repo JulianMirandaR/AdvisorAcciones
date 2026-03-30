@@ -45,12 +45,18 @@ export async function runAIPrediction(stockData) {
     
     // 2. Construir la Red Neuronal (Arquitectura Secuencial simple)
     const model = tf.sequential();
+    
+    // Usamos semillas fijas en la inicialización para asegurar que la red comience
+    // y termine con resultados consistentes (deterministas), eliminando la fluctuación al consultar de nuevo.
+    const kInit = () => tf.initializers.glorotUniform({ seed: 42 });
+    const bInit = () => tf.initializers.zeros();
+
     // Capa de entrada y oculta 1 (32 neuronas - necesitamos un "cerebro" un poco más grande para 20 precios)
-    model.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [windowSize] }));
+    model.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [windowSize], kernelInitializer: kInit(), biasInitializer: bInit() }));
     // Capa oculta 2 (16 neuronas) 
-    model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+    model.add(tf.layers.dense({ units: 16, activation: 'relu', kernelInitializer: kInit(), biasInitializer: bInit() }));
     // Capa de salida (1 neurona con sigmoide para lanzar probabilidad entre 0% y 100%)
-    model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+    model.add(tf.layers.dense({ units: 1, activation: 'sigmoid', kernelInitializer: kInit(), biasInitializer: bInit() }));
     
     model.compile({
         optimizer: tf.train.adam(0.01),
@@ -61,7 +67,7 @@ export async function runAIPrediction(stockData) {
     // 3. Entrenar el modelo con los datos pasados ("Aprender")
     await model.fit(tensorX, tensorY, {
         epochs: 40,        // Pasa por los datos 40 veces
-        shuffle: true,     // Mezcla el orden para que no memorice
+        shuffle: false,    // Mezcla desactivada para mantener determinismo en series temporales
         verbose: 0         // Entrenamiento silencioso (sin logs en cónsola masivos)
     });
     
