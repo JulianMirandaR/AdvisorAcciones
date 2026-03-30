@@ -15,12 +15,46 @@ window.setStrategyMode = (mode) => {
     if (typeof refreshUI === 'function') refreshUI();
 };
 
+window.aiPredictionCache = {};
+
 window.predictAI = async (symbol) => {
     const stockData = globalStocksData.find(s => s.symbol === symbol);
     if (!stockData) return;
     
     const btn = document.getElementById(`btn-ai-${symbol}`);
     const originalText = btn.innerHTML;
+
+    // Función auxiliar para renderizar el veredicto correctamente
+    const showResult = (result) => {
+        let finalProbPct;
+        let move;
+        let color;
+        
+        if (result.probability >= 0.5) {
+            finalProbPct = (result.probability * 100).toFixed(1);
+            move = "SUBIR 📈";
+            color = "var(--accent-green)";
+        } else {
+            // Si la probabilidad de "subir" es 0.45, la de "bajar" es 0.55 (55%)
+            finalProbPct = ((1 - result.probability) * 100).toFixed(1);
+            move = "BAJAR 📉";
+            color = "var(--accent-red)";
+        }
+        
+        alert(`🧠 Mente Maestra IA de Mercado para ${symbol}:\n\nEntrenando una Red Neuronal iterativa con los últimos ${result.daysTrained} días de historia de precios...\n\nRESULTADO:\nHay un ${finalProbPct}% de probabilidad de que la acción vaya a ${move} en los próximos días basándose en el patrón mensual reciente.\n\nNivel de certidumbre del patrón (certeza estadística): ${result.confidence.toFixed(1)}/100`);
+        
+        const moveWord = move.includes("SUBIR") ? "Sube" : "Baja";
+        btn.innerHTML = `${finalProbPct}% ${moveWord}`;
+        btn.style.background = color;
+        btn.style.boxShadow = "none";
+    };
+
+    // Si ya lo procesamos en esta sesión, devolvemos el mismo cálculo para evitar fluctuación mínima de la red neuronal aleatoria
+    if (window.aiPredictionCache[symbol]) {
+        showResult(window.aiPredictionCache[symbol]);
+        return;
+    }
+    
     btn.innerHTML = '⚙️ Pensando...';
     btn.disabled = true;
     
@@ -30,15 +64,8 @@ window.predictAI = async (symbol) => {
             alert(result.error);
             btn.innerHTML = originalText;
         } else {
-            const probPct = (result.probability * 100).toFixed(1);
-            const move = result.probability > 0.5 ? "SUBIR 📈" : "BAJAR 📉";
-            
-            alert(`🧠 Mente Maestra IA de Mercado para ${symbol}:\n\nEntrenando una Red Neuronal iterativa con los últimos ${result.daysTrained} días de historia de precios...\n\nRESULTADO:\nHay un ${probPct}% de probabilidad de que la acción vaya a ${move} en los próximos días basándose en el patrón secuencial reciente.\n\nNivel de certidumbre del patrón: ${result.confidence.toFixed(1)}/100`);
-            
-            // Mark button with result
-            btn.innerHTML = `${probPct}% de Subir`;
-            btn.style.background = result.probability > 0.5 ? "var(--accent-green)" : "var(--accent-red)";
-            btn.style.boxShadow = "none";
+            window.aiPredictionCache[symbol] = result;
+            showResult(result);
         }
     } catch (e) {
         console.error("AI Error:", e);
