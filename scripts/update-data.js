@@ -73,7 +73,9 @@ const activeStocks = [
     { symbol: 'MU', name: 'Micron Technology' },
     { symbol: 'CVX', name: 'Chevron Corp.' },
     { symbol: 'ADBE', name: 'Adobe Inc.' },
-    { symbol: 'GLOB', name: 'Globant S.A.' }
+    { symbol: 'GLOB', name: 'Globant S.A.' },
+    { symbol: 'BTC-USD', name: 'Bitcoin (USD)' },
+    { symbol: 'NIO', name: 'NIO Inc.' }
 ];
 
 const staticFundamentals = {
@@ -318,6 +320,31 @@ async function main() {
             const resistance = Math.max(...recentHighs);
             const support = Math.min(...recentLows);
 
+            // Fetch News Sentiment
+            let newsScore = 0;
+            let newsSentimentStr = "NEUTRO";
+            try {
+                const searchRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}&newsCount=5`, headerOptions);
+                const searchData = await searchRes.json();
+                if (searchData.news && searchData.news.length > 0) {
+                    let totalScore = 0;
+                    searchData.news.forEach(n => {
+                        const title = n.title || "";
+                        const words = title.toLowerCase().match(/\w+/g) || [];
+                        const positiveWords = ['soar','surge','jump','beat','raised','upgrade','upgrades','positive','gain','gains','high','profit','buy','record','bull','bullish','growth','strong','dividend','smashes','smash','outperform','soaring','surging','jumping','wins','partner'];
+                        const negativeWords = ['fall','plunge','drop','miss','missed','lower','lowered','downgrade','downgrades','negative','loss','sell','risk','bear','bearish','lawsuit','probe','delay','cut','cuts','weak','slump','underperform','warning','penalty','sues','falling','plunging','dropping','fines','probe'];
+                        
+                        for (let word of words) {
+                            if (positiveWords.includes(word)) totalScore += 1;
+                            if (negativeWords.includes(word)) totalScore -= 1;
+                        }
+                    });
+                    newsScore = Math.max(-5, Math.min(5, totalScore));
+                    if (newsScore >= 2) newsSentimentStr = "POSITIVO";
+                    else if (newsScore <= -2) newsSentimentStr = "NEGATIVO";
+                }
+            } catch(e) { console.error("News fetch error:", e); }
+
             const finalData = {
                 symbol: symbol,
                 name: name,
@@ -349,6 +376,8 @@ async function main() {
                     k: latestStoch.k.toFixed(2),
                     d: latestStoch.d.toFixed(2)
                 },
+                newsSentiment: newsScore,
+                newsSentimentStr: newsSentimentStr,
                 patterns: [],
                 candles: [],
                 history: JSON.stringify({

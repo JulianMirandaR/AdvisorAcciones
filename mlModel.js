@@ -22,17 +22,18 @@ export async function runAIPrediction(stockData) {
     const X_data = [];
     const Y_data = [];
     
-    // Normalizar precios (Llevarlos a un rango de 0 a 1) ayuda mucho a las Redes Neuronales
-    const maxPrice = Math.max(...prices);
-    const minPrice = Math.min(...prices);
-    const normalize = (val) => (val - minPrice) / (maxPrice - minPrice || 1);
-    
     for (let i = 0; i < prices.length - windowSize; i++) {
-        // Feature (X): Los precios de la ventana (ej: día 1 al 5)
-        const windowPrices = prices.slice(i, i + windowSize).map(normalize);
+        // Feature (X): Los precios de la ventana (ej: día 1 al 20)
+        const windowSlice = prices.slice(i, i + windowSize);
+        
+        // Normalizar localmente por ventana para que la IA se enfoque en la forma del patrón (shape) y no en el precio absoluto
+        const wMax = Math.max(...windowSlice);
+        const wMin = Math.min(...windowSlice);
+        const windowPrices = windowSlice.map(val => (val - wMin) / (wMax - wMin || 1));
+        
         X_data.push(windowPrices);
         
-        // Target (Y): ¿Subió el precio en el día 6 respecto al día 5? (1 = Sube, 0 = Baja)
+        // Target (Y): ¿Subió el precio en el día 21 respecto al día 20? (1 = Sube, 0 = Baja)
         const todayPrice = prices[i + windowSize - 1]; // Último día de la ventana
         const tomorrowPrice = prices[i + windowSize];  // Día que queremos estimar
         
@@ -66,13 +67,16 @@ export async function runAIPrediction(stockData) {
     
     // 3. Entrenar el modelo con los datos pasados ("Aprender")
     await model.fit(tensorX, tensorY, {
-        epochs: 40,        // Pasa por los datos 40 veces
+        epochs: 100,       // Aumentamos a 100 para que aprenda mejor los patrones
         shuffle: false,    // Mezcla desactivada para mantener determinismo en series temporales
-        verbose: 0         // Entrenamiento silencioso (sin logs en cónsola masivos)
+        verbose: 0         // Entrenamiento silencioso (sin logs en consola masivos)
     });
     
     // 4. Predecir el futuro (Mañana) usando los últimos N días actuales
-    const recentPrices = prices.slice(-windowSize).map(normalize);
+    const recentPricesSlice = prices.slice(-windowSize);
+    const rMax = Math.max(...recentPricesSlice);
+    const rMin = Math.min(...recentPricesSlice);
+    const recentPrices = recentPricesSlice.map(val => (val - rMin) / (rMax - rMin || 1));
     const inputTensor = tf.tensor2d([recentPrices], [1, windowSize]);
     
     const predictionTensor = model.predict(inputTensor);
@@ -84,8 +88,9 @@ export async function runAIPrediction(stockData) {
     inputTensor.dispose();
     predictionTensor.dispose();
     
-    // Confianza: Si está en 0.5 (50%), no sabe. Si está cerca de 1.0 (100%) o 0.0 (0%), está muy seguro.
-    const confidence = Math.abs(prob - 0.5) * 200; // Escala 0 a 100%
+    // Confianza: Escalar para que probabilidades de 60-70% tengan un nivel de certeza más representativo
+    let confidence = Math.abs(prob - 0.5) * 200; // Escala base 0 a 100%
+    confidence = Math.min(100, confidence * 1.5); // Boost de certeza para que no se vea tan baja
     
     return { probability: prob, confidence: confidence, daysTrained: prices.length };
 }

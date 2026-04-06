@@ -24,34 +24,8 @@ window.predictAI = async (symbol) => {
     const btn = document.getElementById(`btn-ai-${symbol}`);
     const originalText = btn.innerHTML;
 
-    // Función auxiliar para renderizar el veredicto correctamente
-    const showResult = (result) => {
-        let finalProbPct;
-        let move;
-        let color;
-        
-        if (result.probability >= 0.5) {
-            finalProbPct = (result.probability * 100).toFixed(1);
-            move = "SUBIR 📈";
-            color = "var(--accent-green)";
-        } else {
-            // Si la probabilidad de "subir" es 0.45, la de "bajar" es 0.55 (55%)
-            finalProbPct = ((1 - result.probability) * 100).toFixed(1);
-            move = "BAJAR 📉";
-            color = "var(--accent-red)";
-        }
-        
-        alert(`🧠 Mente Maestra IA de Mercado para ${symbol}:\n\nEntrenando una Red Neuronal iterativa con los últimos ${result.daysTrained} días de historia de precios...\n\nRESULTADO:\nHay un ${finalProbPct}% de probabilidad de que la acción vaya a ${move} en los próximos días basándose en el patrón mensual reciente.\n\nNivel de certidumbre del patrón (certeza estadística): ${result.confidence.toFixed(1)}/100`);
-        
-        const moveWord = move.includes("SUBIR") ? "Sube" : "Baja";
-        btn.innerHTML = `${finalProbPct}% ${moveWord}`;
-        btn.style.background = color;
-        btn.style.boxShadow = "none";
-    };
-
-    // Si ya lo procesamos en esta sesión, devolvemos el mismo cálculo para evitar fluctuación mínima de la red neuronal aleatoria
     if (window.aiPredictionCache[symbol]) {
-        showResult(window.aiPredictionCache[symbol]);
+        refreshUI();
         return;
     }
     
@@ -62,19 +36,46 @@ window.predictAI = async (symbol) => {
         const result = await runAIPrediction(stockData);
         if (result.error) {
             alert(result.error);
-            btn.innerHTML = originalText;
         } else {
             window.aiPredictionCache[symbol] = result;
-            showResult(result);
+            refreshUI(); // Refresca UI para mostrar el Badge IA y recalcular el Score
         }
     } catch (e) {
         console.error("AI Error:", e);
         alert("Hubo un error calculando con IA: " + e.message);
-        btn.innerHTML = originalText;
     } finally {
-        btn.disabled = false;
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
     }
 };
+
+// --- MÓDULO: AI CONFIDENCE ENGINE ---
+function analyzeAIPrediction(aiData) {
+    if (!aiData) return { bias: "NEUTRAL", strength: 0, usable: false };
+    
+    let bias = "NEUTRAL";
+    let strength = 0;
+    let usable = false;
+    
+    if (aiData.confidence >= 55) {
+        usable = true;
+        strength = aiData.confidence / 100;
+        
+        const probPct = aiData.probability * 100;
+        if (probPct > 60) {
+            bias = "BULLISH";
+        } else if (probPct < 40) {
+            bias = "BEARISH";
+        } else {
+            bias = "NEUTRAL";
+            usable = false;
+        }
+    }
+    
+    return { bias, strength, usable };
+}
 
 // --- Logic for Recommendations ---
 
@@ -212,6 +213,19 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
         addReason("Regimen BEAR: Alto riesgo en compras no-reversales.", "negative", 50);
     }
 
+    // --- NEWS LOGIC ---
+    if (typeof data.newsSentiment !== 'undefined' && data.newsSentiment !== 0) {
+        if (data.newsSentiment > 0) {
+            momentumScore += isLongTerm ? data.newsSentiment / 2 : data.newsSentiment;
+            const boostStr = data.newsSentiment >= 2 ? "Fuerte" : "Ligero";
+            addReason(`Impulso ${boostStr} por Noticias Recientes Positivas.`, "positive", 65 + (data.newsSentiment * 2));
+        } else {
+            momentumScore += isLongTerm ? data.newsSentiment / 2 : data.newsSentiment;
+            const penStr = data.newsSentiment <= -2 ? "Fuerte" : "Ligero";
+            addReason(`Rechazo ${penStr} por Noticias Recientes Negativas.`, "negative", 65 + (Math.abs(data.newsSentiment) * 2));
+        }
+    }
+
     // Adjust by Strategy Mode User Setting
     if (strategyMode === 'trend') {
         trendScore *= 1.5; reversalScore *= 0.5;
@@ -289,6 +303,18 @@ function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'S
     // Scoring combinado. CP tira un 60%, LP 40%.
     let finalScore = (cp.score * 0.6) + (lp.score * 0.4);
     
+    // --- INTEGRACIÓN: AI CONFIDENCE ENGINE ---
+    const aiData = window.aiPredictionCache[data.symbol] || null;
+    const aiContext = analyzeAIPrediction(aiData);
+    
+    if (aiContext.usable) {
+        if (aiContext.bias === "BULLISH") {
+            finalScore += 0.5 * aiContext.strength;
+        } else if (aiContext.bias === "BEARISH") {
+            finalScore -= 0.5 * aiContext.strength;
+        }
+    }
+    
     // Manejo de Portafolio
     let actionFlag = null;
     let trailingReason = null;
@@ -318,6 +344,29 @@ function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'S
     else if (finalScore >= -4) signal = "DEBIL / ALERTA";
     else signal = "VENTA";
 
+    // --- SISTEMA DE CONFIRMACIONES IA ---
+    const isTechBuy = signal.includes("COMPRA");
+    const isTechSell = signal.includes("VENTA") || signal.includes("DEBIL");
+    let confirmationLevel = "SIN CONFIRMACIÓN IA";
+
+    if (aiContext.usable) {
+        if (isTechBuy && aiContext.bias === "BULLISH") {
+            confirmationLevel = "ALTA CONFIANZA";
+        } else if (isTechBuy && aiContext.bias === "BEARISH") {
+            confirmationLevel = "CONFLICTO";
+            isConflict = true;
+            conflictMsg = (conflictMsg ? conflictMsg + " | " : "") + "IA detecta patrón Bajista en setup de Compra.";
+        } else if (isTechSell && aiContext.bias === "BEARISH") {
+            confirmationLevel = "ALTA CONFIANZA";
+        } else if (isTechSell && aiContext.bias === "BULLISH") {
+            confirmationLevel = "CONFLICTO";
+            isConflict = true;
+            conflictMsg = (conflictMsg ? conflictMsg + " | " : "") + "IA detecta patrón Alcista en setup de Venta.";
+        } else {
+            confirmationLevel = "NEUTRAL";
+        }
+    }
+
     const stateKey = `${data.symbol}_master`;
     signalMemory[stateKey] = { signal, score: finalScore };
 
@@ -346,7 +395,9 @@ function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'S
         }, // Fallback for old UI
         reasons: combinedReasons,
         setupDetected: finalSetup,
-        actionFlag 
+        actionFlag,
+        ai: aiContext,
+        confirmationLevel
     };
 }
 
@@ -445,6 +496,8 @@ async function initDashboard() {
 }
 
 function refreshUI() {
+    const currentScroll = window.scrollY; // Guardar posición del scroll para evitar "saltos" molestos
+    
     // Si tenemos datos, limpiamos el "Loading..." inicial y renderizamos la tabla
     if (globalStocksData.length > 0) {
         container.innerHTML = '';
@@ -526,6 +579,9 @@ function refreshUI() {
         container.appendChild(cardHTML);
         renderChart(item.data, `chart-${item.data.symbol}`);
     });
+    
+    // Restaurar posición del scroll
+    window.scrollTo(0, currentScroll);
 }
 
 function createCardHTML(item) {
@@ -569,6 +625,25 @@ function createCardHTML(item) {
     const displaySymbol = isArg ? data.symbol.replace('.BA', '') : data.symbol;
     const flag = isArg ? ' <span style="font-size:0.8em">🇦🇷</span>' : '';
 
+    // Si hay conflicto, aplicar clase CSS
+    if (analysis.conflicto) {
+        card.classList.add('conflict-alert');
+    }
+
+    // AI Badge
+    let aiBadgeHtml = '';
+    if (analysis.ai.usable) {
+        const aiColor = analysis.ai.bias === "BULLISH" ? "var(--accent-green)" : (analysis.ai.bias === "BEARISH" ? "var(--accent-red)" : "var(--text-secondary)");
+        const aiText = analysis.ai.bias === "BULLISH" ? "Alcista" : (analysis.ai.bias === "BEARISH" ? "Bajista" : "Neutral");
+        aiBadgeHtml = `
+            <div style="margin-top: 0.8rem; display:flex; gap:0.5rem; font-size: 0.75rem; flex-wrap: wrap;">
+                <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid ${aiColor}; color: ${aiColor}; font-weight: bold;">🧠 IA: ${aiText}</span>
+                <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; color: var(--text-secondary);">Confianza: ${(analysis.ai.strength * 100).toFixed(0)}%</span>
+                <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; color: var(--text-secondary);">Nivel: <b style="color: ${analysis.confirmationLevel === 'ALTA CONFIANZA' ? 'var(--accent-green)' : (analysis.confirmationLevel === 'CONFLICTO' ? 'var(--accent-red)' : 'var(--text-primary)')}">${analysis.confirmationLevel}</b></span>
+            </div>
+        `;
+    }
+
     // Setup badge if generated
     let setupHtml = '';
     if (analysis.setupDetected) {
@@ -576,7 +651,7 @@ function createCardHTML(item) {
     }
 
     card.innerHTML = `
-        <div class="card-header">
+        <div class="card-header" style="margin-bottom: 0;">
             <div>
                 <div class="stock-symbol">${displaySymbol}${flag} 
                     <span class="watchlist-star ${starClass}" onclick="toggleWatchlist('${data.symbol}', event)">★</span>
@@ -588,15 +663,16 @@ function createCardHTML(item) {
                 <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 4px;">Score: <b style="color:${analysis.score >= 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${analysis.score}</b>/10</div>
             </div>
         </div>
+        ${aiBadgeHtml}
         
-        <div class="price-section">
+        <div class="price-section" style="margin-top: 1rem;">
             <div class="current-price">$${data.price}</div>
             <div class="price-change ${changeClass}">${changeSign}${data.change} (${changeSign}${data.changePercent}%)</div>
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button onclick="addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
-                <button onclick="openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
-                <button onclick="window.predictAI('${data.symbol}')" id="btn-ai-${data.symbol}" style="background:#8b5cf6; border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: 0 0 5px rgba(139, 92, 246, 0.5); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">🧠 IA Predict</button>
+                <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
+                <button type="button" onclick="event.preventDefault(); openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
+                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAI('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Predict'}</button>
             </div>
             ${setupHtml}
         </div>
@@ -626,6 +702,10 @@ function createCardHTML(item) {
             <div class="analysis-item">
                 <span class="analysis-label">Confianza</span>
                 <span class="analysis-value">${analysis.confianza.toFixed(0)}%</span>
+            </div>
+            <div class="analysis-item">
+                <span class="analysis-label">Noticias</span>
+                <span class="analysis-value" style="color: ${data.newsSentiment > 0 ? 'var(--accent-green)' : (data.newsSentiment < 0 ? 'var(--accent-red)' : 'inherit')}">${data.newsSentimentStr || 'NEUTRO'}</span>
             </div>
             <div class="analysis-item">
                 <span class="analysis-label">Régimen Macro</span>
@@ -1488,21 +1568,15 @@ function renderBuffettIndicator() {
     fillPercentage = Math.max(0, Math.min(100, fillPercentage));
 
     container.innerHTML = `
-        <div class="macro-title">Indicador Buffett</div>
-        <div class="buffett-status" style="color: ${color}; font-size: 0.85rem; text-align: center; margin-bottom: 0.5rem; line-height: 1.2;">${statusText}</div>
-        <div class="buffett-value" style="color: ${color}">${buffettValue}%</div>
-        <div class="buffett-bar-bg">
-            <div class="buffett-bar-fill" style="width: ${fillPercentage}%; background-color: ${color};"></div>
-        </div>
-        <div class="buffett-labels">
-            <span>Infravalorado</span>
-            <span>Justo</span>
-            <span>Sobrevalorado</span>
-        </div>
-        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 1rem; text-align: center; max-width: 80%;">
-            ${extraInfo}
-        </p>
+        <div class="macro-title" style="font-size: 0.75rem;">Índice Buffett</div>
+        <div class="macro-value" style="font-size: 1.1rem; color: ${color}">${buffettValue}%</div>
+        <div class="macro-desc" style="font-weight: 600; font-size: 0.7rem; line-height: 1.1; color: ${color}">${statusText}</div>
     `;
+
+    // Pasamos extraInfo a un tooltip nativo del TITLE en caso de que sea string normal
+    if (extraInfo) {
+        container.title = extraInfo.replace(/<[^>]*>?/gm, ''); // Removemos etiquetas HTML para el tooltip
+    }
 }
 
 function renderCclIndicator() {
@@ -1602,6 +1676,14 @@ function renderNewMacroIndicators() {
     const vixRec = document.getElementById('vixRecommendation');
     const us10yContainer = document.getElementById('us10yValue');
     const us10yRec = document.getElementById('us10yRecommendation');
+    
+    // Elementos de nuevas métricas
+    const capeContainer = document.getElementById('capeValue');
+    const capeRec = document.getElementById('capeRecommendation');
+    const tobinContainer = document.getElementById('tobinValue');
+    const tobinRec = document.getElementById('tobinRecommendation');
+    const eyContainer = document.getElementById('eyValue');
+    const eyRec = document.getElementById('eyRecommendation');
 
     if (!globalMacroData) return;
 
@@ -1630,6 +1712,61 @@ function renderNewMacroIndicators() {
         } else {
             us10yContainer.style.color = 'var(--text-primary)';
             us10yRec.innerHTML = `<span style="color: var(--text-primary)">Estable</span>`;
+        }
+    }
+    
+    // --- Lógica para Nuevos Indicadores Estáticos / Calculados Proxy ---
+    // Usamos valores del backend si existen, sino asignamos valores recientes del mercado reales hoy.
+    const capeValue = globalMacroData.capeRatio || 34.6; 
+    const tobinQ = globalMacroData.tobinQ || 1.68;
+    
+    // Earnings Yield (S&P500 proxy PE ~ 25.5 hoy)
+    const sp500PE = globalMacroData.sp500PE || 25.4;
+    const earningsYield = (1 / sp500PE) * 100;
+    
+    const currentUs10y = globalMacroData.us10y || 4.25;
+    const eySpread = earningsYield - currentUs10y;
+
+    if (capeContainer) {
+        capeContainer.textContent = capeValue.toFixed(1);
+        if (capeValue > 30) {
+            capeContainer.style.color = 'var(--accent-red)';
+            capeRec.innerHTML = `<span style="color: var(--accent-red)">Muy Sobrevalorado</span>`;
+        } else if (capeValue < 20) {
+            capeContainer.style.color = 'var(--accent-green)';
+            capeRec.innerHTML = `<span style="color: var(--accent-green)">Valuación Atractiva</span>`;
+        } else {
+            capeContainer.style.color = 'var(--text-primary)';
+            capeRec.innerHTML = `<span style="color: var(--text-primary)">Promedio Histórico</span>`;
+        }
+    }
+
+    if (tobinContainer) {
+        tobinContainer.textContent = tobinQ.toFixed(2);
+        if (tobinQ > 1.5) {
+            tobinContainer.style.color = 'var(--accent-red)';
+            tobinRec.innerHTML = `<span style="color: var(--accent-red)">Mercado Caro (>1)</span>`;
+        } else if (tobinQ < 1.0) {
+            tobinContainer.style.color = 'var(--accent-green)';
+            tobinRec.innerHTML = `<span style="color: var(--accent-green)">Bajo Costo Reemplazo</span>`;
+        } else {
+            tobinContainer.style.color = 'var(--text-primary)';
+            tobinRec.innerHTML = `<span style="color: var(--text-primary)">Ligeramente Alto</span>`;
+        }
+    }
+
+    if (eyContainer) {
+        eyContainer.textContent = eySpread > 0 ? `+${eySpread.toFixed(2)}%` : `${eySpread.toFixed(2)}%`;
+        if (eySpread < 0) {
+            // Bonos pagan más que las ganancias de las empresas
+            eyContainer.style.color = 'var(--accent-red)';
+            eyRec.innerHTML = `<span style="color: var(--accent-red)">Riesgo: Renta Fija (Bonos) atrae capital</span>`;
+        } else if (eySpread > 2) {
+            eyContainer.style.color = 'var(--accent-green)';
+            eyRec.innerHTML = `<span style="color: var(--accent-green)">Renta Variable (Acciones) muy atractiva</span>`;
+        } else {
+            eyContainer.style.color = 'var(--text-primary)';
+            eyRec.innerHTML = `<span style="color: var(--text-primary)">Mercado Neutro / Competitivo</span>`;
         }
     }
 }

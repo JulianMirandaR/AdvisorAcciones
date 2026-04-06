@@ -72,8 +72,28 @@
             <div class="dashboard-sidebar">
                 <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 0.5rem;">Datos Macro</h4>
 
-                <div id="buffettContainer" class="buffett-container">
-                    <!-- Injected by app.js -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
+                    <div class="macro-card" id="buffettContainer" style="margin-bottom: 0;" title="Mide la Capitalización Total del Mercado de EE.UU. en relación con su PIB.">
+                        <!-- Injected by app.js -->
+                    </div>
+
+                    <div class="macro-card" id="capeContainer" style="margin-bottom: 0;">
+                        <div class="macro-title" style="font-size: 0.75rem;">CAPE Ratio</div>
+                        <div class="macro-value" id="capeValue" style="font-size: 1.1rem;">--</div>
+                        <div class="macro-desc" id="capeRecommendation" style="font-weight: 600; font-size: 0.7rem; line-height: 1.1;"></div>
+                    </div>
+
+                    <div class="macro-card" id="tobinContainer" style="margin-bottom: 0;">
+                        <div class="macro-title" style="font-size: 0.75rem;">Q de Tobin</div>
+                        <div class="macro-value" id="tobinValue" style="font-size: 1.1rem;">--</div>
+                        <div class="macro-desc" id="tobinRecommendation" style="font-weight: 600; font-size: 0.7rem; line-height: 1.1;"></div>
+                    </div>
+
+                    <div class="macro-card" id="eyContainer" style="margin-bottom: 0;">
+                        <div class="macro-title" style="font-size: 0.75rem;">Earnings VS Bonos</div>
+                        <div class="macro-value" id="eyValue" style="font-size: 1.1rem;">--</div>
+                        <div class="macro-desc" id="eyRecommendation" style="font-weight: 600; font-size: 0.7rem; line-height: 1.1;"></div>
+                    </div>
                 </div>
 
                 <div class="macro-card" id="cclContainer">
