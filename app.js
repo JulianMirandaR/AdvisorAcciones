@@ -813,7 +813,6 @@ function createCardHTML(item) {
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
-                <button type="button" onclick="event.preventDefault(); openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
                 <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAI('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Predict'}</button>
                 <button type="button" onclick="event.preventDefault(); window.openPriceAlert('${data.symbol}', ${data.price})" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">🔔 Alerta</button>
                 <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
@@ -835,7 +834,7 @@ function createCardHTML(item) {
             </div>
         </div>
         
-        <div class="analysis-grid">
+        <div class="analysis-grid" style="grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1rem;">
             <div class="analysis-item">
                 <span class="analysis-label">RSI Rápido</span>
                 <span class="analysis-value" style="color: ${data.rsi < 30 || data.rsi > 70 ? 'var(--accent-blue)' : 'inherit'}">${data.rsi}</span>
@@ -1391,29 +1390,33 @@ window.openNewsModal = function(symbol) {
     document.getElementById('newsTitle').innerText = `📰 Noticias: ${stock.name || symbol}`;
     const container = document.getElementById('newsContainer');
     
-    // Simulate smart news based on AI confidence and sentiment
+    let htmlContent = '';
     const sentiment = stock.newsSentiment || 0;
-    const moodClass = sentiment > 0 ? 'var(--accent-green)' : (sentiment < 0 ? 'var(--accent-red)' : 'var(--text-secondary)');
     
-    let newsSnippets = [
-        `<b>${symbol} reporta sólido volumen.</b> Los inversores institucionales están mostrando interés inusual en la zona de $${stock.price}.`,
-        `<b>Rumores del sector afectan a ${symbol}.</b> Ajustes macroeconómicos sugieren precaución a corto plazo.`,
-        `<b>Análisis Técnico:</b> La acción se mantiene estable sobre soportes clave, indicando consolidación.`,
-        `<b>Métricas Clave:</b> PER ratio de ${stock.peRatio || 'N/A'} captando la atención de fondos de valor pasivo.`
-    ];
-
-    if (sentiment > 1) {
-        newsSnippets.unshift(`<b style="color:var(--accent-green);">🔥 URGENTE: Excelentes Perspectivas</b> Reporte interno sugiere crecimiento de utilidades superior al mercado.`);
-    } else if (sentiment < -1) {
-        newsSnippets.unshift(`<b style="color:var(--accent-red);">🔴 ALERTA DE RIESGO</b> Incertidumbre regulatoria o fallo de supply chain impactando a ${symbol}.`);
+    // Check if the backend has fetched real news for this stock (saved in db)
+    if (stock.newsList && stock.newsList.length > 0) {
+        htmlContent = stock.newsList.map((n, i) => {
+            let borderColor = 'var(--border-color)';
+            if (i === 0 && sentiment > 1) borderColor = 'var(--accent-green)';
+            if (i === 0 && sentiment < -1) borderColor = 'var(--accent-red)';
+            
+            return `
+            <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${borderColor}; margin-bottom: 0.5rem;">
+                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${n.date} - ${n.publisher}</div>
+                <div style="font-size: 0.95rem; line-height: 1.4;">
+                    <a href="${n.link}" target="_blank" style="color: var(--text-primary); text-decoration: none;">${n.title}</a>
+                </div>
+            </div>`;
+        }).join('');
+    } else {
+        htmlContent = `
+        <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+            Aún no hay noticias sincronizadas reales para este ticker en la base de datos.<br>
+            El script de actualización (Backend) procesará y listará las noticias actuales aquí durante su próxima ejecución.
+        </div>`;
     }
     
-    container.innerHTML = newsSnippets.map((n, i) => `
-        <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${i===0?moodClass:'var(--border-color)'};">
-            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${new Date().toLocaleDateString()} - Thomson Reuters Mock</div>
-            <div style="font-size: 0.95rem; line-height: 1.4;">${n}</div>
-        </div>
-    `).join('');
+    container.innerHTML = htmlContent;
     
     document.getElementById('newsModal').style.display = 'flex';
 };

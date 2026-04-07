@@ -320,9 +320,10 @@ async function main() {
             const resistance = Math.max(...recentHighs);
             const support = Math.min(...recentLows);
 
-            // Fetch News Sentiment
+            // Fetch News Sentiment & Real News Headlines
             let newsScore = 0;
             let newsSentimentStr = "NEUTRO";
+            let realNewsData = [];
             try {
                 const searchRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}&newsCount=5`, headerOptions);
                 const searchData = await searchRes.json();
@@ -330,6 +331,12 @@ async function main() {
                     let totalScore = 0;
                     searchData.news.forEach(n => {
                         const title = n.title || "";
+                        const publisher = n.publisher || "Finance News";
+                        const link = n.link || "#";
+                        const pubTime = n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toLocaleDateString() : new Date().toLocaleDateString();
+                        
+                        realNewsData.push({ title, publisher, link, date: pubTime });
+
                         const words = title.toLowerCase().match(/\w+/g) || [];
                         const positiveWords = ['soar','surge','jump','beat','raised','upgrade','upgrades','positive','gain','gains','high','profit','buy','record','bull','bullish','growth','strong','dividend','smashes','smash','outperform','soaring','surging','jumping','wins','partner'];
                         const negativeWords = ['fall','plunge','drop','miss','missed','lower','lowered','downgrade','downgrades','negative','loss','sell','risk','bear','bearish','lawsuit','probe','delay','cut','cuts','weak','slump','underperform','warning','penalty','sues','falling','plunging','dropping','fines','probe'];
@@ -378,6 +385,7 @@ async function main() {
                 },
                 newsSentiment: newsScore,
                 newsSentimentStr: newsSentimentStr,
+                newsList: realNewsData,
                 patterns: [],
                 candles: [],
                 history: JSON.stringify({
