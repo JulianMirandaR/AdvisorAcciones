@@ -741,3 +741,98 @@ header h1 {
         gap: 1rem;
     }
 }
+
+/* --- Notificaciones --- */
+.notifications-wrapper {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    cursor: pointer;
+}
+
+.bell-icon {
+    font-size: 1.5rem;
+    position: relative;
+    user-select: none;
+}
+
+.bell-icon .badge {
+    position: absolute;
+    top: -5px;
+    right: -10px;
+    background-color: var(--accent-red);
+    color: white;
+    border-radius: 50%;
+    padding: 0.1rem 0.4rem;
+    font-size: 0.7rem;
+    font-weight: bold;
+}
+
+.notifications-dropdown {
+    display: none;
+    position: absolute;
+    top: 2.5rem;
+    right: 0;
+    width: 300px;
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    z-index: 1001;
+    overflow: hidden;
+    text-align: left;
+}
+
+.notifications-dropdown.show {
+    display: block;
+}
+
+.notif-header {
+    background-color: var(--hover-bg);
+    padding: 0.75rem 1rem;
+    font-weight: bold;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.notif-body {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.notif-empty {
+    padding: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.notif-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.notif-item:last-child {
+    border-bottom: none;
+}
+
+.notif-item.buy {
+    border-left: 4px solid var(--accent-green);
+}
+
+.notif-item.sell {
+    border-left: 4px solid var(--accent-red);
+}
+
+.notif-item.info {
+    border-left: 4px solid var(--accent-blue);
+}
+
+.notif-time {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}

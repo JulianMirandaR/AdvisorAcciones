@@ -1,7 +1,9 @@
 // --- Analysis Logic ---
 // (Note: `stocks` array and `generateStockData` removed as requested)
-import { RealDataService } from './realData.js';
+import { RealDataService, auth, db } from './realData.js';
 import { runAIPrediction } from './mlModel.js';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
@@ -427,6 +429,140 @@ const historialContainer = document.getElementById('historial-container');
 
 window.portfolioTerm = 'short'; // Plazo por defecto en la pestaña Mi Portafolio
 
+// --- SISTEMA DE NOTIFICACIONES Y ALERTAS ---
+window.notifications = JSON.parse(localStorage.getItem('advisor_notifications') || '[]');
+window.lastKnownSignals = JSON.parse(localStorage.getItem('advisor_last_signals') || '{}');
+window.priceAlerts = JSON.parse(localStorage.getItem('advisor_price_alerts') || '[]');
+window.cloudSynced = false;
+
+window.toggleNotifications = () => {
+    const dropdown = document.getElementById('notifDropdown');
+    if (!dropdown) return;
+    dropdown.classList.toggle('show');
+    if (dropdown.classList.contains('show')) {
+        window.renderNotifications();
+        // Clear badge when viewing
+        const badge = document.getElementById('notifBadge');
+        if (badge) {
+            badge.style.display = 'none';
+            badge.textContent = '0';
+        }
+    }
+};
+
+window.addNotification = (message, type = 'info') => {
+    const now = new Date();
+    window.notifications.unshift({
+        id: now.getTime(),
+        message,
+        type,
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + now.toLocaleDateString()
+    });
+    
+    // Keep only last 20
+    if (window.notifications.length > 20) {
+        window.notifications = window.notifications.slice(0, 20);
+    }
+    
+    localStorage.setItem('advisor_notifications', JSON.stringify(window.notifications));
+    
+    // Update badge visually if dropdown is not open
+    const dropdown = document.getElementById('notifDropdown');
+    if (!dropdown || !dropdown.classList.contains('show')) {
+        const badge = document.getElementById('notifBadge');
+        if (badge) {
+            let count = parseInt(badge.textContent) || 0;
+            badge.textContent = count + 1;
+            badge.style.display = 'inline-block';
+        }
+    } else {
+        window.renderNotifications();
+    }
+};
+
+window.renderNotifications = () => {
+    const body = document.getElementById('notifBody');
+    if (!body) return;
+    
+    if (window.notifications.length === 0) {
+        body.innerHTML = '<div class="notif-empty">No tienes notificaciones aún.</div>';
+        return;
+    }
+    
+    body.innerHTML = window.notifications.map(n => `
+        <div class="notif-item ${n.type}">
+            ${n.message}
+            <span class="notif-time">${n.time}</span>
+        </div>
+    `).join('');
+};
+
+function checkNotifications() {
+    const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
+    const marketCondition = getMarketCondition(vix);
+    
+    let hasChanges = false;
+    
+    globalStocksData.forEach(stock => {
+        const portfolioPos = portfolio.find(p => p.symbol === stock.symbol);
+        const portfolioInfo = portfolioPos ? { entryPrice: portfolioPos.price, highestPrice: portfolioPos.highestPrice } : null;
+        
+        // Use default analysis logic
+        const analysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo);
+        const sig = analysis.signal;
+        const currentAction = analysis.actionFlag || sig;
+        const prevSignal = window.lastKnownSignals[stock.symbol];
+        
+        // 1. Accion comprada (en portfolio) da para venta
+        if (portfolioPos) {
+            // Signal cambió a venta?
+            if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
+                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell');
+            }
+            // Stop Loss o Take Profit alert
+            if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
+                window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell');
+            }
+            if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
+                window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy');
+            }
+        } else {
+            // 2. Accion (no en portfolio) da de compra confirmada
+            if ((sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE') {
+                if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
+                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy');
+                } else {
+                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy');
+                }
+            }
+        }
+        
+        // 3. Revisar Alertas de Precio Personalizadas
+        window.priceAlerts.forEach(alert => {
+            if (!alert.triggered && alert.symbol === stock.symbol) {
+                if ((alert.direction === 'up' && stock.price >= alert.targetPrice) ||
+                    (alert.direction === 'down' && stock.price <= alert.targetPrice)) {
+                    window.addNotification(`🎯 ALERTA DE PRECIO: ${stock.symbol} cruzó tu objetivo de $${alert.targetPrice.toFixed(2)} (Actual: $${stock.price})`, 'buy');
+                    alert.triggered = true;
+                    hasChanges = true;
+                }
+            }
+        });
+        
+        if (window.lastKnownSignals[stock.symbol] !== currentAction) {
+            window.lastKnownSignals[stock.symbol] = currentAction;
+            hasChanges = true;
+        }
+    });
+
+    if (hasChanges) {
+        localStorage.setItem('advisor_last_signals', JSON.stringify(window.lastKnownSignals));
+        localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
+        if(window.cloudSynced) window.syncDataToFirebase();
+    }
+}
+// ---------------------------------
+
 window.togglePortfolioTerm = (term) => {
     window.portfolioTerm = term;
     renderPortfolio();
@@ -463,6 +599,7 @@ async function initDashboard() {
 
     const handleStockUpdate = (updatedList) => {
         globalStocksData = updatedList; // Update global list reference
+        checkNotifications(); // Verificar nuevas oportunidades y cambios de tendencia
         refreshUI(); // Re-render sorted list
         renderMarketStatus(); // Actualizar contador de API
         renderHeatmap(); // Update Heatmap
@@ -650,6 +787,11 @@ function createCardHTML(item) {
         setupHtml = `<div style="margin-top:0.5rem;"><span style="background: var(--accent-blue); color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 0 8px var(--accent-blue);">🔥 SETUP DE ALTA PROBABILIDAD (${analysis.setupDetected.toUpperCase()})</span></div>`;
     }
 
+    // Mock Earnings logic based on symbol hash
+    const hashCode = s => s.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0);
+    const daysToEarnings = Math.abs(hashCode(data.symbol)) % 60;
+    const earningsHtml = daysToEarnings < 15 ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">⚠️ Próximo Reporte de Ganancias en ${daysToEarnings} días</span></div>` : '';
+
     card.innerHTML = `
         <div class="card-header" style="margin-bottom: 0;">
             <div>
@@ -673,8 +815,11 @@ function createCardHTML(item) {
                 <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
                 <button type="button" onclick="event.preventDefault(); openBacktestModal('${data.symbol}')" style="background:var(--accent-blue); border:none; color:white; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: var(--glow-shadow); transition:0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">⚙️ Simular</button>
                 <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAI('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Predict'}</button>
+                <button type="button" onclick="event.preventDefault(); window.openPriceAlert('${data.symbol}', ${data.price})" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">🔔 Alerta</button>
+                <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
             </div>
             ${setupHtml}
+            ${earningsHtml}
         </div>
 
         <div class="analysis-grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
@@ -720,8 +865,8 @@ function createCardHTML(item) {
             </ul>
         </div>
 
-        <div class="chart-wrapper" onclick="openTradingViewModal('${data.symbol}')" style="cursor: pointer; transition: 0.2s;" onmouseover="this.style.opacity='0.8'" onmouseout="this.style.opacity='1'" title="Ver Gráfico Avanzado">
-            <canvas id="chart-${data.symbol}"></canvas>
+        <div class="chart-wrapper" ondblclick="openTradingViewModal('${data.symbol}')" style="cursor: pointer; transition: 0.2s; height: 180px; margin-top: 1rem;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'" title="Doble Click para Análisis Profundo">
+            <div id="chart-${data.symbol}" style="width: 100%; height: 100%;"></div>
         </div>
     `;
     return card;
@@ -767,6 +912,7 @@ window.toggleWatchlist = (symbol, event) => {
         watchlist.splice(index, 1);
     }
     localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
+    if (window.cloudSynced) window.syncDataToFirebase();
     refreshUI();
 };
 
@@ -919,6 +1065,7 @@ function renderPortfolio() {
 
     if (hasPortfolioChanges) {
         localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+        if(window.cloudSynced) window.syncDataToFirebase();
     }
 
     // Summary
@@ -1007,126 +1154,269 @@ initDashboard();
 
 
 function renderChart(data, canvasId) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    const color = parseFloat(data.change) >= 0 ? '#22c55e' : '#ef4444';
+    const container = document.getElementById(canvasId);
+    if (!container) return;
 
-    if (chartInstances[canvasId]) {
-        chartInstances[canvasId].destroy();
+    // Check if LightweightCharts is loaded
+    if (typeof LightweightCharts === 'undefined') {
+        container.innerHTML = '<p style="color:var(--text-secondary); text-align:center; padding: 2rem;">Cargando motor gráfico profesional...</p>';
+        return;
     }
 
-    // Determine how many days to show based on standard term
-    // all = 150 days (~6 months), long = 250 days (~1 year)
+    container.innerHTML = ''; // Clear prev
+
     const pointsToShow = (currentTerm === 'short' || currentTerm === 'all') ? -150 : -250;
-
-    const labels = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
+    const dates = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
     const prices = data.history.prices ? data.history.prices.slice(pointsToShow) : [];
+    const ema20 = data.history.ema20 ? data.history.ema20.slice(pointsToShow) : [];
+    
+    if (prices.length === 0) return;
 
-    // Prepare datasets
-    const datasets = [
-        {
-            label: 'Precio',
-            data: prices,
-            borderColor: color,
-            backgroundColor: color,
-            borderWidth: 2,
-            tension: 0.1,
-            pointRadius: 0, // Points only on hover
-            pointHoverRadius: 4,
-            fill: false,
-            order: 1
-        }
-    ];
-
-    // Add Indicators if available and overlapping
-    // EMA 20
-    if (data.history.ema20 && data.history.ema20.length > 0) {
-        // Pad with nulls if shorter (though slice(-60) usually aligns from end)
-        // ChartJS automatically aligns from end if labels match? No, needs same length or x/y
-        // We assumed same length in realData.js slice(-60).
-        datasets.push({
-            label: 'EMA 20',
-            data: data.history.ema20.slice(pointsToShow),
-            borderColor: '#3b82f6', // Blue
-            borderWidth: 1,
-            borderDash: [5, 5],
-            tension: 0.4,
-            pointRadius: 0,
-            fill: false,
-            order: 2
-        });
+    // Build Candlestick mock logic
+    const candleData = [];
+    let prevClose = prices[0];
+    for (let i = 0; i < dates.length; i++) {
+        const p = parseFloat(prices[i]);
+        // Derive pseudo OHLC from single line history to show candlestick utility
+        const vol = p * 0.015; 
+        const open = i > 0 ? parseFloat(prices[i-1]) : prevClose;
+        const close = p;
+        const high = Math.max(open, close) + (vol * Math.random());
+        const low = Math.min(open, close) - (vol * Math.random());
+        
+        candleData.push({ time: dates[i], open, high, low, close });
+        prevClose = close;
     }
 
-    // SMA 200 (Long Term Trend)
-    if (data.history.sma200 && data.history.sma200.length > 0) {
-        datasets.push({
-            label: 'SMA 200',
-            data: data.history.sma200.slice(pointsToShow),
-            borderColor: '#a855f7', // Purple
-            borderWidth: 1,
-            pointRadius: 0,
-            fill: false,
-            order: 3
-        });
-    }
-
-
-    chartInstances[canvasId] = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels, // X-Axis Labels (Dates)
-            datasets: datasets
+    const chart = LightweightCharts.createChart(container, {
+        width: container.clientWidth,
+        height: container.clientHeight,
+        layout: {
+            background: { type: 'solid', color: 'transparent' },
+            textColor: '#d1d5db',
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    labels: {
-                        color: '#9ca3af',
-                        font: { size: 10 },
-                        boxWidth: 10
-                    }
-                },
-                tooltip: {
-                    enabled: true,
-                    backgroundColor: 'rgba(17, 24, 39, 0.9)',
-                    titleColor: '#f3f4f6',
-                    bodyColor: '#d1d5db',
-                    borderColor: '#374151',
-                    borderWidth: 1
-                }
-            },
-            scales: {
-                x: {
-                    display: true,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
-                    },
-                    ticks: {
-                        color: '#6b7280',
-                        font: { size: 9 },
-                        maxTicksLimit: 6
-                    }
-                },
-                y: {
-                    display: true,
-                    grid: {
-                        color: 'rgba(255, 255, 255, 0.05)'
-                    },
-                    ticks: {
-                        color: '#6b7280',
-                        font: { size: 10 }
-                    }
-                }
-            }
+        grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        timeScale: {
+            timeVisible: true,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            rightOffset: 0,
+            fixRightEdge: true,
+        },
+        rightPriceScale: {
+            borderColor: 'rgba(255, 255, 255, 0.1)',
         }
     });
+
+    const candleSeries = chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350',
+    });
+
+    candleSeries.setData(candleData);
+
+    // Add EMA if exists
+    if (ema20.length > 0) {
+        const emaData = [];
+        for (let i = 0; i < dates.length; i++) {
+            if (ema20[i]) emaData.push({ time: dates[i], value: parseFloat(ema20[i]) });
+        }
+        const emaSeries = chart.addLineSeries({
+            color: 'rgba(59, 130, 246, 0.8)', // blue
+            lineWidth: 1,
+            crosshairMarkerVisible: false,
+        });
+        emaSeries.setData(emaData);
+    }
+
+    chart.timeScale().fitContent();
+    chart.timeScale().applyOptions({ rightOffset: 0 });
+
+    // Handling resize automatically
+    new ResizeObserver(entries => {
+        if (entries.length === 0 || entries[0].target !== container) return;
+        const newRect = entries[0].contentRect;
+        chart.applyOptions({ height: newRect.height, width: newRect.width });
+    }).observe(container);
 }
+
+// --- Integraciones Globales para Interfaz ---
+
+window.authMode = 'login'; // 'login' or 'register'
+
+window.openAuthModal = function() {
+    if (window.cloudSynced && auth.currentUser) {
+        if(confirm("Ya estás logueado. ¿Quieres cerrar sesión?")) {
+            signOut(auth).then(() => {
+                 window.cloudSynced = false;
+                 document.getElementById('cloudStatusText').innerText = "Iniciar Sesión";
+                 document.getElementById('cloudStatusText').style.color = "inherit";
+                 alert("Sesión cerrada.");
+            }).catch(e => console.error(e));
+        }
+        return;
+    }
+    document.getElementById('authModal').style.display = 'flex';
+    document.getElementById('authErrorMsg').style.display = 'none';
+};
+
+window.toggleAuthMode = function() {
+    if (window.authMode === 'login') {
+        window.authMode = 'register';
+        document.getElementById('authModalTitle').innerText = 'Crear Cuenta';
+        document.getElementById('authSubmitBtn').innerText = 'Registrarse';
+        document.getElementById('authSwitchText').innerText = '¿Ya tienes cuenta?';
+        document.getElementById('authSwitchLink').innerText = 'Ingresar';
+    } else {
+        window.authMode = 'login';
+        document.getElementById('authModalTitle').innerText = 'Iniciar Sesión';
+        document.getElementById('authSubmitBtn').innerText = 'Ingresar';
+        document.getElementById('authSwitchText').innerText = '¿No tienes cuenta?';
+        document.getElementById('authSwitchLink').innerText = 'Crear Cuenta';
+    }
+};
+
+window.handleAuthSubmit = async function() {
+    const email = document.getElementById('authEmail').value;
+    const pass = document.getElementById('authPassword').value;
+    const errorEl = document.getElementById('authErrorMsg');
+    
+    errorEl.style.display = 'none';
+    
+    try {
+        if (window.authMode === 'login') {
+            await signInWithEmailAndPassword(auth, email, pass);
+        } else {
+            await createUserWithEmailAndPassword(auth, email, pass);
+        }
+        document.getElementById('authModal').style.display = 'none';
+    } catch(err) {
+        errorEl.innerText = "Error: " + err.message;
+        errorEl.style.display = 'block';
+    }
+};
+
+// Monitor de estado de autenticación (Se ejecuta automáticamente cuando Firebase detecta estado)
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        window.cloudSynced = true;
+        document.getElementById('cloudStatusText').innerText = "Conectado";
+        document.getElementById('cloudStatusText').style.color = "var(--accent-green)";
+        
+        // Cargar datos de la nube
+        try {
+            const docRef = doc(db, "users", user.uid);
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                const d = docSnap.data();
+                if (d.portfolio) {
+                    portfolio = d.portfolio;
+                    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+                }
+                if (d.watchlist) {
+                    watchlist = d.watchlist;
+                    localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
+                }
+                if (d.priceAlerts) {
+                    window.priceAlerts = d.priceAlerts;
+                    localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
+                }
+                if(typeof refreshUI === 'function') refreshUI();
+            }
+        } catch(e) {
+            console.error("Error cargando perfil nube", e);
+        }
+    } else {
+        window.cloudSynced = false;
+        document.getElementById('cloudStatusText').innerText = "Iniciar Sesión";
+        document.getElementById('cloudStatusText').style.color = "inherit";
+    }
+});
+
+window.syncDataToFirebase = async function() {
+   if (!auth.currentUser) return;
+   try {
+       const docRef = doc(db, "users", auth.currentUser.uid);
+       await setDoc(docRef, {
+           portfolio: portfolio,
+           watchlist: watchlist,
+           priceAlerts: window.priceAlerts,
+           updatedAt: new Date().toISOString()
+       }, { merge: true });
+   } catch(e) {
+       console.error("Error subiendo datos", e);
+   }
+};
+
+let currentAlertSymbol = '';
+window.openPriceAlert = function(symbol, currentPrice) {
+    currentAlertSymbol = symbol;
+    document.getElementById('alertSymbolText').innerText = symbol;
+    document.getElementById('alertPriceInput').value = currentPrice;
+    document.getElementById('alertModal').style.display = 'flex';
+};
+
+window.savePriceAlert = function() {
+    const inputPrice = parseFloat(document.getElementById('alertPriceInput').value);
+    if (isNaN(inputPrice)) return;
+    
+    const stock = globalStocksData.find(s => s.symbol === currentAlertSymbol);
+    if (!stock) return;
+    
+    const direction = inputPrice > stock.price ? 'up' : 'down';
+    
+    window.priceAlerts.push({
+        id: new Date().getTime(),
+        symbol: currentAlertSymbol,
+        targetPrice: inputPrice,
+        direction: direction,
+        triggered: false,
+        createdAt: new Date().toISOString()
+    });
+    
+    localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
+    document.getElementById('alertModal').style.display = 'none';
+    alert(`Alerta guardada para ${currentAlertSymbol} al llegar a $${inputPrice}.`);
+};
+
+window.openNewsModal = function(symbol) {
+    const stock = globalStocksData.find(s => s.symbol === symbol);
+    if (!stock) return;
+    
+    document.getElementById('newsTitle').innerText = `📰 Noticias: ${stock.name || symbol}`;
+    const container = document.getElementById('newsContainer');
+    
+    // Simulate smart news based on AI confidence and sentiment
+    const sentiment = stock.newsSentiment || 0;
+    const moodClass = sentiment > 0 ? 'var(--accent-green)' : (sentiment < 0 ? 'var(--accent-red)' : 'var(--text-secondary)');
+    
+    let newsSnippets = [
+        `<b>${symbol} reporta sólido volumen.</b> Los inversores institucionales están mostrando interés inusual en la zona de $${stock.price}.`,
+        `<b>Rumores del sector afectan a ${symbol}.</b> Ajustes macroeconómicos sugieren precaución a corto plazo.`,
+        `<b>Análisis Técnico:</b> La acción se mantiene estable sobre soportes clave, indicando consolidación.`,
+        `<b>Métricas Clave:</b> PER ratio de ${stock.peRatio || 'N/A'} captando la atención de fondos de valor pasivo.`
+    ];
+
+    if (sentiment > 1) {
+        newsSnippets.unshift(`<b style="color:var(--accent-green);">🔥 URGENTE: Excelentes Perspectivas</b> Reporte interno sugiere crecimiento de utilidades superior al mercado.`);
+    } else if (sentiment < -1) {
+        newsSnippets.unshift(`<b style="color:var(--accent-red);">🔴 ALERTA DE RIESGO</b> Incertidumbre regulatoria o fallo de supply chain impactando a ${symbol}.`);
+    }
+    
+    container.innerHTML = newsSnippets.map((n, i) => `
+        <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${i===0?moodClass:'var(--border-color)'};">
+            <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${new Date().toLocaleDateString()} - Thomson Reuters Mock</div>
+            <div style="font-size: 0.95rem; line-height: 1.4;">${n}</div>
+        </div>
+    `).join('');
+    
+    document.getElementById('newsModal').style.display = 'flex';
+};
 
 // --- BONUS: Backtesting Engine Integrado ---
 // Función disponible globalmente para usarse desde la consola de desarrollador
@@ -1313,11 +1603,11 @@ function renderHeatmap() {
     // Eliminado el estiramiento vertical forzado (65vh y alignContent)
 
     const sectorMapping = {
-        'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología',
-        'AMZN': 'Comercio Minorista', 'NFLX': 'Servicios Consumo', 'KO': 'Consumo', 'PEP': 'Consumo', 'WMT': 'Comercio Minorista', 'MCD': 'Servicios Consumo', 'NKE': 'Consumo', 'DIS': 'Servicios Consumo', 'BABA': 'Comercio Minorista', 'MELI': 'Comercio Minorista', 'UBER': 'Transporte', 'TSLA': 'Automotriz',
+        'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología', 'AVGO': 'Tecnología',
+        'AMZN': 'Comercio Minorista', 'NFLX': 'Servicios Consumo', 'KO': 'Consumo', 'PEP': 'Consumo', 'WMT': 'Comercio Minorista', 'MCD': 'Servicios Consumo', 'NKE': 'Consumo', 'DIS': 'Servicios Consumo', 'BABA': 'Comercio Minorista', 'MELI': 'Comercio Minorista', 'UBER': 'Transporte', 'TSLA': 'Automotriz', 'NIO': 'Automotriz',
         'JPM': 'Finanzas', 'V': 'Finanzas', 'MA': 'Finanzas', 'BAC': 'Finanzas', 'XP': 'Finanzas', 'PYPL': 'Finanzas', 'SQ': 'Finanzas', 'COIN': 'Finanzas', 'UPST': 'Finanzas',
         'YPFD.BA': 'Mercado AR', 'PAMP.BA': 'Mercado AR', 'CEPU.BA': 'Mercado AR', 'TGSU2.BA': 'Mercado AR', 'EDN.BA': 'Mercado AR', 'CRES.BA': 'Mercado AR', 'ALUA.BA': 'Mercado AR', 'TXAR.BA': 'Mercado AR', 'BMA.BA': 'Mercado AR', 'GGAL.BA': 'Mercado AR',
-        'LLY': 'Salud', 'SPY': 'ETFs', 'BA': 'Industrial', 'YPF': 'Energía', 'CVX': 'Energía'
+        'LLY': 'Salud', 'SPY': 'ETFs', 'BA': 'Industrial', 'YPF': 'Energía', 'CVX': 'Energía', 'BTC-USD': 'Criptomonedas'
     };
 
     // Agrupar stocks por sector
@@ -1328,14 +1618,16 @@ function renderHeatmap() {
         const sector = sectorMapping[stock.symbol] || 'Otros';
         if (!sectors[sector]) sectors[sector] = { stocks: [], weight: 0 };
         
-        // Proxy para Capitalización: Precio * Volumen Medio. Si no hay, valor fallback.
-        const price = parseFloat(stock.price) || 10;
-        const vol = parseFloat(stock.avgVolume) || parseFloat(stock.volume) || 1000000;
-        let weight = price * vol;
-        if (isNaN(weight) || weight <= 0) weight = 5000000; // mid cap fallback
-        
-        // Damos un poco más de peso a AR o restamos a mega caps para que no rompan el layout visualmente
-        weight = Math.sqrt(weight); 
+        let weight = 1;
+        // Asignamos un peso ligeramente mayor a empresas gigantes reales para destacarlas visualmente sin romper el grid, 
+        // en vez de usar Precio*Volumen que da números desproporcionados como sucedió con Bitcoin.
+        if (['AAPL','MSFT','NVDA','GOOGL','AMZN','META'].includes(stock.symbol)) {
+            weight = 2; // Mega caps
+        } else if (['TSLA','AMD','NFLX','BTC-USD','AVGO'].includes(stock.symbol)) {
+            weight = 1.5; // Large caps
+        } else {
+            weight = 1.0; // Otros
+        }
 
         sectors[sector].stocks.push({ ...stock, weight });
         sectors[sector].weight += weight;
@@ -1354,10 +1646,11 @@ function renderHeatmap() {
 
         // Porcentaje de espacio que este sector debería ocupar aproximadamente
         const sectorFlexTarget = (sectorData.weight / totalMarketWeight) * 100;
-        const sectorFlexBasis = Math.max(150, Math.min(600, sectorFlexTarget * 15));
+        const sectorFlexBasis = Math.max(120, sectorFlexTarget * 12); // Sin límite superior fijo
 
         const sectorDiv = document.createElement('div');
-        sectorDiv.style.flex = `1 1 ${sectorFlexBasis}px`; // Flex grow and shrink
+        // Usa weight como factor de crecimiento para distribución real en el Heatmap
+        sectorDiv.style.flex = `${sectorData.weight} 1 ${sectorFlexBasis}px`; 
         sectorDiv.style.display = 'flex';
         sectorDiv.style.flexDirection = 'column';
         sectorDiv.style.border = '1px solid #111'; // Borde oscuro entre sectores
@@ -1385,10 +1678,10 @@ function renderHeatmap() {
             const change = parseFloat(stock.changePercent);
             const block = document.createElement('div');
             
-            // Calculamos el espacio flex de esta acción dentro de su sector
+            // Calculamos el espacio flex: flex-grow proporcional al peso
             const stockFlexBasis = Math.max(40, (stock.weight / sectorData.weight) * 200);
 
-            block.style.flex = `1 1 ${stockFlexBasis}px`;
+            block.style.flex = `${stock.weight} 1 ${stockFlexBasis}px`;
             block.style.display = 'flex';
             block.style.flexDirection = 'column';
             block.style.justifyContent = 'center';
@@ -1458,6 +1751,17 @@ function renderHeatmap() {
 
             blocksContainer.appendChild(block);
         });
+
+        // Añadir fantasmas (spacers invisibles) para evitar que la última fila se estire desproporcionadamente
+        for(let i=0; i<4; i++) {
+            const spacer = document.createElement('div');
+            spacer.style.flex = `1 1 40px`; 
+            spacer.style.height = `0px`; 
+            spacer.style.margin = `0`;
+            spacer.style.padding = `0`;
+            spacer.style.border = `none`;
+            blocksContainer.appendChild(spacer);
+        }
 
         sectorDiv.appendChild(sectorTitle);
         sectorDiv.appendChild(blocksContainer);
