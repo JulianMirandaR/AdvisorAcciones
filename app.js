@@ -447,6 +447,7 @@ window.toggleNotifications = () => {
             badge.style.display = 'none';
             badge.textContent = '0';
         }
+        localStorage.setItem('advisor_unread_notifs', '0');
     }
 };
 
@@ -469,16 +470,31 @@ window.addNotification = (message, type = 'info') => {
     // Update badge visually if dropdown is not open
     const dropdown = document.getElementById('notifDropdown');
     if (!dropdown || !dropdown.classList.contains('show')) {
+        let unread = parseInt(localStorage.getItem('advisor_unread_notifs') || '0');
+        unread += 1;
+        localStorage.setItem('advisor_unread_notifs', unread.toString());
+        
         const badge = document.getElementById('notifBadge');
         if (badge) {
-            let count = parseInt(badge.textContent) || 0;
-            badge.textContent = count + 1;
+            badge.textContent = unread;
             badge.style.display = 'inline-block';
         }
     } else {
         window.renderNotifications();
     }
 };
+
+// Initial boot logic para mostrar el numerito en recargas
+setTimeout(() => {
+    let unread = parseInt(localStorage.getItem('advisor_unread_notifs') || '0');
+    if (unread > 0) {
+        const badge = document.getElementById('notifBadge');
+        if (badge) {
+            badge.textContent = unread;
+            badge.style.display = 'inline-block';
+        }
+    }
+}, 500);
 
 window.renderNotifications = () => {
     const body = document.getElementById('notifBody');
@@ -938,6 +954,7 @@ window.removeFromPortfolio = (index) => {
 
     portfolio.splice(index, 1);
     localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+    if(window.cloudSynced) window.syncDataToFirebase();
     renderPortfolio();
 };
 
@@ -960,7 +977,9 @@ window.addToPortfolioPrompt = (symbol) => {
             qty: parseFloat(qty)
         });
         localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+        if(window.cloudSynced) window.syncDataToFirebase();
         alert(`${symbol} añadida al portafolio exitosamente.`);
+        renderPortfolio();
     }, 50);
 };
 

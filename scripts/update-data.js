@@ -329,15 +329,26 @@ async function main() {
                 const searchData = await searchRes.json();
                 if (searchData.news && searchData.news.length > 0) {
                     let totalScore = 0;
-                    searchData.news.forEach(n => {
-                        const title = n.title || "";
+                    for (const n of searchData.news) {
+                        const originalTitle = n.title || "";
                         const publisher = n.publisher || "Finance News";
                         const link = n.link || "#";
                         const pubTime = n.providerPublishTime ? new Date(n.providerPublishTime * 1000).toLocaleDateString() : new Date().toLocaleDateString();
                         
-                        realNewsData.push({ title, publisher, link, date: pubTime });
+                        let translatedTitle = originalTitle;
+                        try {
+                            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=es&dt=t&q=${encodeURIComponent(originalTitle)}`);
+                            const tData = await res.json();
+                            if (tData && tData[0]) {
+                                translatedTitle = tData[0].map(x => x[0]).join('');
+                            }
+                        } catch (e) {
+                            // Fallback to english if API fails
+                        }
+                        
+                        realNewsData.push({ title: translatedTitle, publisher, link, date: pubTime });
 
-                        const words = title.toLowerCase().match(/\w+/g) || [];
+                        const words = originalTitle.toLowerCase().match(/\w+/g) || [];
                         const positiveWords = ['soar','surge','jump','beat','raised','upgrade','upgrades','positive','gain','gains','high','profit','buy','record','bull','bullish','growth','strong','dividend','smashes','smash','outperform','soaring','surging','jumping','wins','partner'];
                         const negativeWords = ['fall','plunge','drop','miss','missed','lower','lowered','downgrade','downgrades','negative','loss','sell','risk','bear','bearish','lawsuit','probe','delay','cut','cuts','weak','slump','underperform','warning','penalty','sues','falling','plunging','dropping','fines','probe'];
                         
@@ -345,7 +356,7 @@ async function main() {
                             if (positiveWords.includes(word)) totalScore += 1;
                             if (negativeWords.includes(word)) totalScore -= 1;
                         }
-                    });
+                    }
                     newsScore = Math.max(-5, Math.min(5, totalScore));
                     if (newsScore >= 2) newsSentimentStr = "POSITIVO";
                     else if (newsScore <= -2) newsSentimentStr = "NEGATIVO";
