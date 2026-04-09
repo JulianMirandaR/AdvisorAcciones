@@ -102,7 +102,7 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
         
         // Pullback detectado en CP validando con ATR
         if (isTrendUp && ema20 && Math.abs(price - ema20) < (atr * 0.5) && recentPct > 0) {
-            setupDetected = "PULLBACK_EMA20";
+            setupDetected = "Pullback a EMA20 (Continuación)";
             trendScore += 3;
             addReason("Pullback sano a EMA20 detectado.", "positive", 100);
         }
@@ -113,7 +113,7 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     if (!isLongTerm && resistance && price > resistance && p1 <= resistance) {
         if (rvol > 1.5) {
             momentumScore += 5;
-            setupDetected = "BREAKOUT_CONFIRMADO";
+            setupDetected = "Breakout Validado c/Volumen";
             addReason(`Breakout válido con Alto Volumen (RVOL: ${rvol.toFixed(1)}x).`, "positive", 110);
         } else {
             // Fakeout detection
@@ -131,7 +131,7 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
         reversalScore += 5;
         addReason(isLongTerm ? "Extremo de Sobrevenda LP o Desviación" : "RSI Sobrevendido / Extensión Bajista Profunda.", "positive", 90);
         if (isStoppingFall) {
-            setupDetected = isLongTerm ? "DEEP_VALUE_BOTTOM" : "QUICK_REVERSAL_BOUNCE";
+            setupDetected = isLongTerm ? "Piso Profundo / Deep Value" : "Rebote Rápido por Agotamiento";
             reversalScore += 4;
             addReason("Setup: Frenado de caída en zona extrema.", "positive", 100);
         }

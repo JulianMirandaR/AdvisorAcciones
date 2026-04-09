@@ -208,14 +208,19 @@ window.togglePortfolioTerm = (term) => {
 
 
 function renderMarketStatus() {
-    const today = new Date().toLocaleDateString();
+    let now = new Date();
+    if (typeof globalMacroData !== 'undefined' && globalMacroData && globalMacroData.lastUpdated) {
+        now = new Date(globalMacroData.lastUpdated);
+    }
+    const today = now.toLocaleDateString();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     let usageInfo = `<br><span style="font-size: 0.8rem; color: var(--accent-green);">Actualización de precios automática desde la nube activa</span>`;
 
     marketStatus.innerHTML = `
         <span class="status-indicator status-up"></span>
         <div>
-            Datos del Mercado para: ${today}
+            Datos del Mercado para: ${today} a las ${time}
             ${usageInfo}
         </div>
     `;
@@ -251,6 +256,7 @@ async function initDashboard() {
 
     const handleMacroUpdate = (macroData) => {
         globalMacroData = macroData;
+        renderMarketStatus(); // We update the timestamp here once macro data is loaded
         renderBuffettIndicator();
         renderCclIndicator();
         renderNewMacroIndicators();
