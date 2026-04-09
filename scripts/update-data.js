@@ -363,23 +363,39 @@ async function main() {
                 }
             } catch(e) { console.error("News fetch error:", e); }
 
-            const finalData = {
-                symbol: symbol,
-                name: name,
-                price: currentPrice.toFixed(2),
-                change: change.toFixed(2),
-                changePercent: changePercent.toFixed(2),
-                sma50: sma50.toFixed(2),
-                ema20: ema20.toFixed(2),
-                sma200: sma200.toFixed(2),
-                rsi: rsi.toFixed(2),
-                macd: {
-                    line: latestMacd.MACD,
-                    signal: latestMacd.signal,
-                    histogram: latestMacd.histogram
-                },
-                volume: prices[prices.length - 1].volume,
-                avgVolume: 0,
+                const recentVols = prices.slice(-20).map(p => p.volume || 0);
+                const avgVolume = recentVols.length > 0 ? recentVols.reduce((a,b)=>a+b,0)/recentVols.length : 1;
+                
+                // Calculo estricto del True Range y ATR a 14 dias
+                const trData = [];
+                for(let i=1; i<closePrices.length; i++){
+                    const high = prices[i].high;
+                    const low = prices[i].low;
+                    const prevCloseLocal = prices[i-1].close;
+                    const tr = Math.max(high - low, Math.abs(high - prevCloseLocal), Math.abs(low - prevCloseLocal));
+                    trData.push(tr);
+                }
+                const recentTr = trData.slice(-14);
+                const atrVal = recentTr.length > 0 ? recentTr.reduce((a,b)=>a+b,0)/recentTr.length : 0;
+
+                const finalData = {
+                    symbol: symbol,
+                    name: name,
+                    price: currentPrice.toFixed(2),
+                    change: change.toFixed(2),
+                    changePercent: changePercent.toFixed(2),
+                    sma50: sma50.toFixed(2),
+                    ema20: ema20.toFixed(2),
+                    sma200: sma200.toFixed(2),
+                    rsi: rsi.toFixed(2),
+                    macd: {
+                        line: latestMacd.MACD,
+                        signal: latestMacd.signal,
+                        histogram: latestMacd.histogram
+                    },
+                    volume: prices[prices.length - 1].volume,
+                    avgVolume: avgVolume,
+                    atr: atrVal.toFixed(2),
                 support: support.toFixed(2),
                 resistance: resistance.toFixed(2),
                 peRatio: staticFundamentals[symbol] ? staticFundamentals[symbol].peRatio : 'N/A',

@@ -1,407 +1,29 @@
 // --- Analysis Logic ---
 // (Note: `stocks` array and `generateStockData` removed as requested)
 import { RealDataService, auth, db } from './realData.js';
-import { runAIPrediction } from './mlModel.js';
+// mlModel.js is now handled by uiFeatures.js
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
+import { handlePredictAI, handleOpenNewsModal } from './uiFeatures.js';
+import { runWalkForwardBacktest } from './walkForwardEngine.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
 
-// --- Logic para Memoria de Señales ---
-const signalMemory = {};
-let strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
+window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 
 window.setStrategyMode = (mode) => {
-    strategyMode = mode;
+    window.strategyMode = mode;
     if (typeof refreshUI === 'function') refreshUI();
 };
 
 window.aiPredictionCache = {};
+window.predictAI = (symbol) => handlePredictAI(symbol, globalStocksData, refreshUI);
+window.openNewsModal = (symbol) => handleOpenNewsModal(symbol, globalStocksData);
+window.runWalkForwardBacktest = runWalkForwardBacktest;
 
-window.predictAI = async (symbol) => {
-    const stockData = globalStocksData.find(s => s.symbol === symbol);
-    if (!stockData) return;
-    
-    const btn = document.getElementById(`btn-ai-${symbol}`);
-    const originalText = btn.innerHTML;
-
-    if (window.aiPredictionCache[symbol]) {
-        refreshUI();
-        return;
-    }
-    
-    btn.innerHTML = '⚙️ Pensando...';
-    btn.disabled = true;
-    
-    try {
-        const result = await runAIPrediction(stockData);
-        if (result.error) {
-            alert(result.error);
-        } else {
-            window.aiPredictionCache[symbol] = result;
-            refreshUI(); // Refresca UI para mostrar el Badge IA y recalcular el Score
-        }
-    } catch (e) {
-        console.error("AI Error:", e);
-        alert("Hubo un error calculando con IA: " + e.message);
-    } finally {
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-    }
-};
-
-// --- MÓDULO: AI CONFIDENCE ENGINE ---
-function analyzeAIPrediction(aiData) {
-    if (!aiData) return { bias: "NEUTRAL", strength: 0, usable: false };
-    
-    let bias = "NEUTRAL";
-    let strength = 0;
-    let usable = false;
-    
-    if (aiData.confidence >= 55) {
-        usable = true;
-        strength = aiData.confidence / 100;
-        
-        const probPct = aiData.probability * 100;
-        if (probPct > 60) {
-            bias = "BULLISH";
-        } else if (probPct < 40) {
-            bias = "BEARISH";
-        } else {
-            bias = "NEUTRAL";
-            usable = false;
-        }
-    }
-    
-    return { bias, strength, usable };
-}
-
-// --- Logic for Recommendations ---
-
-// --- 1. MARKET REGIME ENGINE ---
-function getMarketCondition(vix) {
-    if (vix < 20) return 'BULL';
-    if (vix > 30) return 'BEAR';
-    return 'LATERAL';
-}
-
-// --- 2. TIMEFRAME & STRATEGY ENGINE ---
-function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo) {
-    let factors = { trend: 0, momentum: 0, reversal: 0, macro: 0, risk: 0 };
-    let reasons = [];
-    let setupDetected = null;
-
-    const addReason = (text, type, weight) => reasons.push({ text, type, weight });
-
-    const price = parseFloat(data.price) || 0;
-    const rsi = typeof data.rsi !== 'undefined' ? parseFloat(data.rsi) : 50;
-    const macdHist = data.macd && typeof data.macd.histogram !== 'undefined' ? parseFloat(data.macd.histogram) : 0;
-    
-    // Simular EMA9 con un cruce veloz respecto a EMA20 si no existe
-    const ema20 = parseFloat(data.ema20) || 0;
-    const sma50 = parseFloat(data.sma50) || 0;
-    const sma200 = parseFloat(data.sma200) || 0;
-    const support = parseFloat(data.support) || null;
-    const resistance = parseFloat(data.resistance) || null;
-    
-    // History prices for Momentum
-    let prices = [];
-    if (data.history && data.history.prices && data.history.prices.length >= 5) {
-        prices = data.history.prices;
-    }
-    const p1 = prices.length >= 2 ? parseFloat(prices[prices.length - 2]) : price;
-    const p5 = prices.length >= 6 ? parseFloat(prices[prices.length - 6]) : price;
-    const recentPct = p1 > 0 ? (price - p1) / p1 : 0;
-    const olderPct = p5 > 0 ? (p1 - p5) / p5 : 0;
-
-    // A. STRATEGY ENGINE
-    let trendScore = 0;
-    let reversalScore = 0;
-    let momentumScore = 0;
-    let isTrendUp = false;
-
-    // --- TREND LOGIC ---
-    if (isLongTerm) {
-        // Largo Plazo: basarse pesadamente en SMA200 y SMA50
-        if (sma200) {
-            if (price > sma200 * 1.05) {
-                trendScore += 5; isTrendUp = true; addReason("Tendencia Estructural Alcista Confirmada (P > SMA200+5%).", "positive", 100);
-            } else if (price > sma200) {
-                trendScore += 3; isTrendUp = true; addReason("Tendencia Estructural Positiva (P > SMA200).", "positive", 90);
-            } else {
-                trendScore -= 5; addReason("Estructura Bajista LP (P < SMA200).", "negative", 100);
-                factors.risk -= 3;
-            }
-        }
-        if (sma50 && sma200) {
-            if (sma50 > sma200) { trendScore += 2; addReason("Alineación Media Móvil LP (Golden Cross proxy).", "positive", 80); }
-            else { trendScore -= 2; }
-        }
-        
-        // Estructura de máximos (usando simple momentum array)
-        if (recentPct > olderPct && price > p5) { trendScore += 1; }
-    } else {
-        // Corto Plazo: basarse en EMA impulsivas
-        if (ema20 && price > ema20) {
-            trendScore += 4; isTrendUp = true; addReason("Momentum CP Positivo (P > EMA20).", "positive", 90);
-        } else if (ema20) {
-            trendScore -= 4; addReason("Momentum CP Quebrado (P < EMA20).", "negative", 90);
-        }
-        if (ema20 && sma50 && ema20 > sma50) {
-            trendScore += 2; addReason("Alineación de Corto Alcista.", "positive", 80);
-        }
-        
-        // Pullback detectado en CP
-        if (isTrendUp && ema20 && Math.abs((price - ema20) / ema20) < 0.015 && recentPct > 0) {
-            setupDetected = "PULLBACK_EMA20";
-            trendScore += 3;
-            addReason("Pullback a EMA20 detectado. Continuación probable.", "positive", 100);
-        }
-    }
-
-    // --- REVERSAL LOGIC ---
-    let isStoppingFall = (!isTrendUp && recentPct > olderPct && olderPct < -0.015);
-    
-    if (rsi < 30) {
-        reversalScore += 5;
-        addReason(isLongTerm ? "Extremo de Sobrevenda LP (RSI < 30)" : "RSI Rápido Sobrevendido.", "positive", 90);
-        if (isStoppingFall) {
-            setupDetected = isLongTerm ? "DEEP_VALUE_BOTTOM" : "QUICK_REVERSAL_BOUNCE";
-            reversalScore += 4;
-            addReason("Setup: Frenado de caída con RSI crítico detectado.", "positive", 100);
-        }
-    } else if (rsi > 70) {
-        reversalScore -= 5;
-        factors.risk -= 4;
-        addReason(isLongTerm ? "Sobrecompra Estructural (RSI > 70)." : "RSI Rápido Sobrecomprado. Riesgo Pullback.", "negative", 90);
-    } else if (rsi < 40) {
-        reversalScore += 2; // Ligero valor
-    }
-
-    if (support && Math.abs((price - support) / price) < 0.02) {
-        reversalScore += 3;
-        addReason("Precio testeando soporte histórico.", "positive", 80);
-    }
-    if (resistance && Math.abs((price - resistance) / price) < 0.02) {
-        reversalScore -= 3;
-        factors.risk -= 2;
-        addReason("Precio golpeando resistencia técnica.", "negative", 80);
-    }
-
-    // --- MOMENTUM LOGIC ---
-    if (macdHist > 0) {
-        momentumScore += isLongTerm ? 2 : 4;
-        addReason("MACD Histograma Alcista.", "positive", 70);
-    } else if (macdHist < 0) {
-        momentumScore -= isLongTerm ? 2 : 4;
-    }
-    
-    if (recentPct > 0 && recentPct > olderPct) {
-        momentumScore += 3; addReason("Aceleración de precios.", "positive", 60);
-    } else if (recentPct < 0 && recentPct < olderPct) {
-        momentumScore -= 3;
-    }
-
-    // --- MACRO LOGIC ---
-    if (regime === 'BULL') {
-        factors.macro = 4;
-        addReason("Regimen BULL favorece compras.", "positive", 50);
-    } else if (regime === 'BEAR') {
-        factors.macro = -4;
-        factors.risk -= 3;
-        addReason("Regimen BEAR: Alto riesgo en compras no-reversales.", "negative", 50);
-    }
-
-    // --- NEWS LOGIC ---
-    if (typeof data.newsSentiment !== 'undefined' && data.newsSentiment !== 0) {
-        if (data.newsSentiment > 0) {
-            momentumScore += isLongTerm ? data.newsSentiment / 2 : data.newsSentiment;
-            const boostStr = data.newsSentiment >= 2 ? "Fuerte" : "Ligero";
-            addReason(`Impulso ${boostStr} por Noticias Recientes Positivas.`, "positive", 65 + (data.newsSentiment * 2));
-        } else {
-            momentumScore += isLongTerm ? data.newsSentiment / 2 : data.newsSentiment;
-            const penStr = data.newsSentiment <= -2 ? "Fuerte" : "Ligero";
-            addReason(`Rechazo ${penStr} por Noticias Recientes Negativas.`, "negative", 65 + (Math.abs(data.newsSentiment) * 2));
-        }
-    }
-
-    // Adjust by Strategy Mode User Setting
-    if (strategyMode === 'trend') {
-        trendScore *= 1.5; reversalScore *= 0.5;
-    } else if (strategyMode === 'reversal') {
-        trendScore *= 0.5; reversalScore *= 1.5;
-    }
-
-    // Assign final raw metrics
-    factors.trend = Math.max(-10, Math.min(10, trendScore));
-    factors.reversal = Math.max(-10, Math.min(10, reversalScore));
-    factors.momentum = Math.max(-10, Math.min(10, momentumScore));
-    factors.risk = Math.max(-10, Math.min(0, factors.risk)); // Risk is only negative or 0
-    
-    // FASE 4: Fundamental Score Logic
-    let fundamentalScoreRaw = 0;
-    if (isLongTerm) {
-        const pe = parseFloat(data.peRatio);
-        if (!isNaN(pe) && pe > 0 && pe < 15) { fundamentalScoreRaw += 2; addReason("PER Atractivo (< 15).", "positive", 60); }
-        if (data.epsGrowth !== 'N/A' && parseFloat(data.epsGrowth) > 5) { fundamentalScoreRaw += 2; addReason("Fuerte Crecimiento EPS.", "positive", 60); }
-        if (data.roe !== 'N/A' && parseFloat(data.roe) > 15) { fundamentalScoreRaw += 1; addReason("Alta Rentabilidad (ROE > 15%).", "positive", 50); }
-    }
-    const fundamentalScore = Math.max(0, Math.min(5, fundamentalScoreRaw)) * 2; // scale to 10
-    factors.fundamental = isLongTerm ? fundamentalScore : 0;
-
-    // 3. SCORING ENGINE (NIVEL PROFESIONAL)
-    let finalScoreRaw = 0;
-    if (isLongTerm) {
-        // Largo Plazo (Actualizado con Fundamentales 10%): 
-        // 30% Trend, 15% Mom, 10% Rev, 25% Macro, 10% Risk, 10% Fundamental
-        finalScoreRaw = (factors.trend * 0.30) + (factors.momentum * 0.15) + (factors.reversal * 0.10) + (factors.macro * 0.25) + (factors.risk * 0.10) + (factors.fundamental * 0.10);
-    } else {
-        // Corto Plazo: 25% Trend, 30% Mom, 30% Rev, 5% Macro, 10% Risk
-        finalScoreRaw = (factors.trend * 0.25) + (factors.momentum * 0.30) + (factors.reversal * 0.30) + (factors.macro * 0.05) + (factors.risk * 0.10);
-    }
-
-    // Expand slightly to fit [-10, 10] range effectively
-    finalScoreRaw = finalScoreRaw * 1.5;
-    let score = Math.max(-10, Math.min(10, finalScoreRaw));
-
-    let signal = "NEUTRAL / NO OPERAR";
-    if (score >= 8) signal = "COMPRA FUERTE";
-    else if (score >= 6) signal = "COMPRA";
-    else if (score >= 4) signal = "PRE-COMPRA";
-    else if (score >= 2) signal = "OBSERVAR";
-    else if (score >= -2) signal = "NEUTRAL / NO OPERAR";
-    else if (score >= -4) signal = "DEBIL / ALERTA";
-    else signal = "VENTA";
-
-    reasons.sort((a, b) => b.weight - a.weight);
-
-    return { signal, score: Number(score.toFixed(1)), factors, reasons, setupDetected };
-}
-
-// Reemplazo exacto del orquestador anterior usando la firma requerida
-function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'SIDEWAYS', portfolioInfo = null) {
-    const cp = analyzeTimeframe(data, false, marketCondition, strategyMode, portfolioInfo);
-    const lp = analyzeTimeframe(data, true, marketCondition, strategyMode, portfolioInfo);
-    
-    // Conflicto Clave
-    let isConflict = false;
-    let conflictMsg = null;
-    const cpBull = cp.score >= 4;
-    const cpBear = cp.score <= -2;
-    const lpBull = lp.score >= 4;
-    const lpBear = lp.score <= -2;
-    
-    if (cpBull && lpBear) {
-        isConflict = true;
-        conflictMsg = "Corto plazo alcista, largo plazo bajista (Riesgo).";
-    } else if (cpBear && lpBull) {
-        isConflict = true;
-        conflictMsg = "Largo plazo alcista, corto plazo bajista (Oportunidad).";
-    }
-    
-    // Scoring combinado. CP tira un 60%, LP 40%.
-    let finalScore = (cp.score * 0.6) + (lp.score * 0.4);
-    
-    // --- INTEGRACIÓN: AI CONFIDENCE ENGINE ---
-    const aiData = window.aiPredictionCache[data.symbol] || null;
-    const aiContext = analyzeAIPrediction(aiData);
-    
-    if (aiContext.usable) {
-        if (aiContext.bias === "BULLISH") {
-            finalScore += 0.5 * aiContext.strength;
-        } else if (aiContext.bias === "BEARISH") {
-            finalScore -= 0.5 * aiContext.strength;
-        }
-    }
-    
-    // Manejo de Portafolio
-    let actionFlag = null;
-    let trailingReason = null;
-    if (portfolioInfo && data.price) {
-        const currentReturn = (data.price - portfolioInfo.entryPrice) / portfolioInfo.entryPrice;
-        const trailingDrawdown = (portfolioInfo.highestPrice - data.price) / portfolioInfo.highestPrice;
-        
-        if (currentReturn < -0.05) { 
-            actionFlag = "STOP_LOSS"; 
-            finalScore -= 5; 
-            trailingReason = { text: "Stop Loss de portafolio alcanzado.", type: "negative", weight: 200 };
-        } else if (trailingDrawdown > 0.03 && currentReturn > 0.05) { 
-            actionFlag = "TAKE_PROFIT"; 
-            finalScore -= 3; 
-            trailingReason = { text: "Trailing Stop asegurando ganancia.", type: "negative", weight: 200 };
-        }
-    }
-
-    finalScore = Math.max(-10, Math.min(10, finalScore));
-
-    let signal = "NEUTRAL / NO OPERAR";
-    if (finalScore >= 8) signal = "COMPRA FUERTE";
-    else if (finalScore >= 6) signal = "COMPRA";
-    else if (finalScore >= 4) signal = "PRE-COMPRA";
-    else if (finalScore >= 2) signal = "OBSERVAR";
-    else if (finalScore >= -2) signal = "NEUTRAL / NO OPERAR";
-    else if (finalScore >= -4) signal = "DEBIL / ALERTA";
-    else signal = "VENTA";
-
-    // --- SISTEMA DE CONFIRMACIONES IA ---
-    const isTechBuy = signal.includes("COMPRA");
-    const isTechSell = signal.includes("VENTA") || signal.includes("DEBIL");
-    let confirmationLevel = "SIN CONFIRMACIÓN IA";
-
-    if (aiContext.usable) {
-        if (isTechBuy && aiContext.bias === "BULLISH") {
-            confirmationLevel = "ALTA CONFIANZA";
-        } else if (isTechBuy && aiContext.bias === "BEARISH") {
-            confirmationLevel = "CONFLICTO";
-            isConflict = true;
-            conflictMsg = (conflictMsg ? conflictMsg + " | " : "") + "IA detecta patrón Bajista en setup de Compra.";
-        } else if (isTechSell && aiContext.bias === "BEARISH") {
-            confirmationLevel = "ALTA CONFIANZA";
-        } else if (isTechSell && aiContext.bias === "BULLISH") {
-            confirmationLevel = "CONFLICTO";
-            isConflict = true;
-            conflictMsg = (conflictMsg ? conflictMsg + " | " : "") + "IA detecta patrón Alcista en setup de Venta.";
-        } else {
-            confirmationLevel = "NEUTRAL";
-        }
-    }
-
-    const stateKey = `${data.symbol}_master`;
-    signalMemory[stateKey] = { signal, score: finalScore };
-
-    let combinedReasons = [];
-    if (trailingReason) combinedReasons.push(trailingReason);
-    if (isConflict) combinedReasons.push({ text: `CONFLICTO: ${conflictMsg}`, type: "neutral", weight: 150 });
-    
-    // Mezclamos un par de razones de CP y LP para la UI
-    combinedReasons = combinedReasons.concat(cp.reasons.slice(0,2)).concat(lp.reasons.slice(0,2));
-
-    const finalSetup = cp.setupDetected || lp.setupDetected;
-
-    return { 
-        corto_plazo: cp,
-        largo_plazo: lp,
-        señal_final: signal, // Exact match to prompt
-        signal: signal,      // Compatibility backward match
-        score: Number(finalScore.toFixed(1)), // Compatibility
-        confianza: Math.min(100, Math.max(0, 50 + (finalScore * 5))),
-        contexto_mercado: marketCondition,
-        conflicto: isConflict ? conflictMsg : null,
-        factors: { 
-            trend: lp.factors.trend, 
-            momentum: cp.factors.momentum, 
-            reversal: cp.factors.reversal 
-        }, // Fallback for old UI
-        reasons: combinedReasons,
-        setupDetected: finalSetup,
-        actionFlag,
-        ai: aiContext,
-        confirmationLevel
-    };
-}
+// (El motor de recomendaciones se ha extraído a analysisEngine.js)
 
 // --- UI Rendering ---
 
@@ -664,8 +286,21 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'none';
+        
+        // Ocultar mapa de calor y pestañas si están logueados
+        const heatmap = document.getElementById('marketHeatmap');
+        if (heatmap) heatmap.style.display = 'none';
+        heatmap.previousElementSibling.style.display = 'none'; // h4 titulo del heatmap
+        document.querySelector('.tabs').style.display = 'none';
+        
         return;
     }
+
+    // Asegurarse de restaurar visibilidad cuando sí hay sesión
+    const heatmap = document.getElementById('marketHeatmap');
+    if (heatmap) heatmap.style.display = 'flex';
+    if (heatmap && heatmap.previousElementSibling) heatmap.previousElementSibling.style.display = 'block';
+    if (document.querySelector('.tabs')) document.querySelector('.tabs').style.display = 'flex';
 
     // Si tenemos datos, limpiamos el "Loading..." inicial y renderizamos la tabla
     if (globalStocksData.length > 0) {
@@ -1425,43 +1060,7 @@ window.savePriceAlert = function() {
     alert(`Alerta guardada para ${currentAlertSymbol} al llegar a $${inputPrice}.`);
 };
 
-window.openNewsModal = function(symbol) {
-    const stock = globalStocksData.find(s => s.symbol === symbol);
-    if (!stock) return;
-    
-    document.getElementById('newsTitle').innerText = `📰 Noticias: ${stock.name || symbol}`;
-    const container = document.getElementById('newsContainer');
-    
-    let htmlContent = '';
-    const sentiment = stock.newsSentiment || 0;
-    
-    // Check if the backend has fetched real news for this stock (saved in db)
-    if (stock.newsList && stock.newsList.length > 0) {
-        htmlContent = stock.newsList.map((n, i) => {
-            let borderColor = 'var(--border-color)';
-            if (i === 0 && sentiment > 1) borderColor = 'var(--accent-green)';
-            if (i === 0 && sentiment < -1) borderColor = 'var(--accent-red)';
-            
-            return `
-            <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${borderColor}; margin-bottom: 0.5rem;">
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${n.date} - ${n.publisher}</div>
-                <div style="font-size: 0.95rem; line-height: 1.4;">
-                    <a href="${n.link}" target="_blank" style="color: var(--text-primary); text-decoration: none;">${n.title}</a>
-                </div>
-            </div>`;
-        }).join('');
-    } else {
-        htmlContent = `
-        <div style="text-align: center; color: var(--text-secondary); padding: 2rem;">
-            Aún no hay noticias sincronizadas reales para este ticker en la base de datos.<br>
-            El script de actualización (Backend) procesará y listará las noticias actuales aquí durante su próxima ejecución.
-        </div>`;
-    }
-    
-    container.innerHTML = htmlContent;
-    
-    document.getElementById('newsModal').style.display = 'flex';
-};
+// Modal de Noticias gestionado por uiFeatures.js
 
 // --- BONUS: Backtesting Engine Integrado ---
 // Función disponible globalmente para usarse desde la consola de desarrollador
@@ -1470,42 +1069,49 @@ window.openNewsModal = function(symbol) {
  * @param {Array} stockHistory - Array de días (Ej: resultado de un mapeo previo que contenga { price, rsi, macd, ema20... })
  * @param {String} term - "short" (por defecto) o "long"
  */
-window.runBacktest = function(stockHistory, config = {}) {
-    if (!Array.isArray(stockHistory) || stockHistory.length === 0) {
+window.runBacktest = function(stockHistoryChronological, config = {}) {
+    if (!Array.isArray(stockHistoryChronological) || stockHistoryChronological.length === 0) {
         console.error("Backtest falló: stockHistory vacio o invalido.");
         return null; 
     }
 
-    // Compatibilidad si pasan el segundo parametro como term (fallback a old API)
     if (typeof config === 'string') {
         config = { term: config };
     }
 
     const {
-        capital = 1000,
-        positionSizePct = 1.0,  // 1.0 = 100%
-        stopLossPct = -5.0,     // % 
-        takeProfitPct = 10.0,   // %
-        trailingStopPct = null, // %
+        capital = 10000,
+        positionSizePct = 1.0,
+        stopLossPct = -0.05,
+        takeProfitPct = 0.15,
+        trailingStopPct = 0.03, // Ignored mostly as we use ATR dynamically now
         slippagePct = 0.2,
         commissionPct = 0.1,
         term = 'short',
         marketCondition = 'SIDEWAYS'
     } = config;
 
+    // 1. TIME-BASED SPLIT (Anti Data Leakage)
+    // Reserve 20% for pure Out-Of-Sample validation testing
+    const splitIndex = Math.floor(stockHistoryChronological.length * 0.80);
+    const testData = stockHistoryChronological.slice(splitIndex);
+
+    if (testData.length < 10) {
+        return { error: "Poco data out-of-sample para test" };
+    }
+    console.log(`[Backtest] Evaluando ${testData.length} dias OUT-OF-SAMPLE (Blind Test)`);
+
     let currentCapital = capital;
-    let position = null; // { entryPrice, qty, highestPrice, investedAmount }
+    let position = null;
     
-    let totalTrades = 0;
-    let winningTrades = 0;
+    let trades = [];
     let grossProfit = 0;
     let grossLoss = 0;
     let peakCapital = capital;
     let maxDrawdown = 0;
+    let equityCurve = [];
 
-    console.log(`[Backtest] Iniciando simulación en ${stockHistory.length} días (Estrategia: ${typeof strategyMode !== 'undefined' ? strategyMode : 'hybrid'}, Modo: ${term})`);
-
-    stockHistory.forEach((dayData, index) => {
+    testData.forEach((dayData, index) => {
         const currentPrice = parseFloat(dayData.price);
         if (isNaN(currentPrice)) return;
 
@@ -1521,13 +1127,13 @@ window.runBacktest = function(stockHistory, config = {}) {
         }
 
         const analysis = analyzeStockWithMarketCondition(dayData, term, marketCondition, portfolioInfo);
-        // By default use master signal, unless testing specific term
-        let signal = analysis.signal;
+        
+        let signal = analysis.señal_final || analysis.signal;
         if (term === 'short') signal = analysis.corto_plazo.signal;
         else if (term === 'long') signal = analysis.largo_plazo.signal;
 
         if (!position) {
-            // Evaluando entrada
+            // Evaluando Entrada
             if (signal.includes("COMPRA") || signal.includes("PRE-COMPRA")) {
                 const investAmount = currentCapital * positionSizePct;
                 const priceWithSlippage = currentPrice * (1 + (slippagePct / 100));
@@ -1537,30 +1143,33 @@ window.runBacktest = function(stockHistory, config = {}) {
                 const qty = finalInvestAmount / priceWithSlippage;
 
                 position = {
+                    entryDate: dayData.date,
                     entryPrice: priceWithSlippage,
                     qty: qty,
                     highestPrice: priceWithSlippage,
                     investedAmount: investAmount
                 };
                 currentCapital -= investAmount;
-                totalTrades++;
             }
         } else {
-            // Evaluando salida
+            // Evaluando Salida
             let exitReason = null;
-            const floatProfitPct = ((currentPrice - position.entryPrice) / position.entryPrice) * 100;
+            const floatProfitPct = (currentPrice - position.entryPrice) / position.entryPrice;
             
+            // Hard Stops (Safety net)
             if (floatProfitPct <= stopLossPct) {
                 exitReason = "STOP_LOSS";
             } else if (floatProfitPct >= takeProfitPct) {
                 exitReason = "TAKE_PROFIT";
-            } else if (trailingStopPct !== null) {
-                const drawdownFromPeak = ((position.highestPrice - currentPrice) / position.highestPrice) * 100;
+            } else if (analysis.actionFlag) { // Flag dinamico ATR del motor de analisis
+                exitReason = analysis.actionFlag;
+            } else if (signal.includes("VENTA")) {
+                exitReason = "SIGNAL_SELL";
+            } else if (trailingStopPct && floatProfitPct > 0) {
+                const drawdownFromPeak = (position.highestPrice - currentPrice) / position.highestPrice;
                 if (drawdownFromPeak >= trailingStopPct) {
                     exitReason = "TRAILING_STOP";
                 }
-            } else if (signal.includes("VENTA")) {
-                exitReason = "SIGNAL_SELL";
             }
 
             if (exitReason) {
@@ -1572,28 +1181,36 @@ window.runBacktest = function(stockHistory, config = {}) {
                 currentCapital += netVal;
 
                 const tradeProfit = netVal - position.investedAmount;
-                if (tradeProfit > 0) {
-                    winningTrades++;
-                    grossProfit += tradeProfit;
-                } else {
-                    grossLoss += Math.abs(tradeProfit);
-                }
+                if (tradeProfit > 0) grossProfit += tradeProfit;
+                else grossLoss += Math.abs(tradeProfit);
+
+                trades.push({
+                    entryDate: position.entryDate,
+                    exitDate: dayData.date,
+                    profit: tradeProfit,
+                    profitPct: tradeProfit / position.investedAmount,
+                    reason: exitReason
+                });
 
                 position = null;
             }
         }
 
         const currentEquity = currentCapital + (position ? (currentPrice * position.qty) : 0);
+        equityCurve.push({ date: dayData.date, value: currentEquity });
+
         if (currentEquity > peakCapital) {
             peakCapital = currentEquity;
         } else {
-            const drawdown = ((peakCapital - currentEquity) / peakCapital) * 100;
+            const drawdown = (peakCapital - currentEquity) / peakCapital;
             if (drawdown > maxDrawdown) maxDrawdown = drawdown;
         }
     });
 
+    // Close open position at end
     if (position) {
-        const lastPrice = parseFloat(stockHistory[stockHistory.length - 1].price);
+        const lastDay = testData[testData.length - 1];
+        const lastPrice = parseFloat(lastDay.price);
         const priceWithSlippage = lastPrice * (1 - (slippagePct / 100));
         const grossVal = position.qty * priceWithSlippage;
         const commission = grossVal * (commissionPct / 100);
@@ -1601,33 +1218,34 @@ window.runBacktest = function(stockHistory, config = {}) {
 
         currentCapital += netVal;
         const tradeProfit = netVal - position.investedAmount;
-        if (tradeProfit > 0) {
-            winningTrades++;
-            grossProfit += tradeProfit;
-        } else {
-            grossLoss += Math.abs(tradeProfit);
-        }
+        if (tradeProfit > 0) grossProfit += tradeProfit;
+        else grossLoss += Math.abs(tradeProfit);
+        
+        trades.push({
+            entryDate: position.entryDate,
+            exitDate: lastDay.date,
+            profit: tradeProfit,
+            profitPct: tradeProfit / position.investedAmount,
+            reason: "END_OF_TEST"
+        });
     }
 
-    const profitTotalVal = currentCapital - capital;
-    const profitPercent = (profitTotalVal / capital) * 100;
-    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
+    const winningTrades = trades.filter(t => t.profit > 0).length;
+    const winRate = trades.length > 0 ? (winningTrades / trades.length) : 0;
     const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
-    // Sharpe Ratio simplificado (rendimiento / max drawdown) solo referencial
-    const sharpeRatio = maxDrawdown > 0 ? (profitPercent / maxDrawdown) : 0;
+    const totalReturn = (currentCapital - capital) / capital;
 
     const result = {
-        initialCapital: `$${capital.toFixed(2)}`,
-        finalCapital: `$${currentCapital.toFixed(2)}`,
-        profitTotal: `$${profitTotalVal.toFixed(2)} (${profitPercent.toFixed(2)}%)`,
-        totalTrades: totalTrades,
-        winRate: `${winRate.toFixed(2)}%`,
-        maxDrawdown: `${maxDrawdown.toFixed(2)}%`,
+        initialCapital: capital,
+        finalCapital: currentCapital,
+        totalReturn: totalReturn,
+        winRate: winRate,
+        maxDrawdown: maxDrawdown,
         profitFactor: profitFactor === Infinity ? "Infinity" : profitFactor.toFixed(2),
-        sharpeRatio: sharpeRatio.toFixed(2)
+        trades: trades,
+        equityCurve: equityCurve
     };
-
-    console.table(result);
+    
     return result;
 };
 
