@@ -651,6 +651,22 @@ async function initDashboard() {
 function refreshUI() {
     const currentScroll = window.scrollY; // Guardar posición del scroll para evitar "saltos" molestos
     
+    // --- ACCESO RESTRINGIDO SI NO HAY SESIÓN ---
+    if (!window.cloudSynced) {
+        container.style.display = 'flex';
+        container.innerHTML = `
+            <div style="text-align:center; padding: 4rem 1rem; width: 100%;">
+                <h2 style="margin-bottom: 1rem;">Acceso Restringido</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 2rem;">Por favor, inicia sesión para ver las recomendaciones del mercado y gestionar tu portafolio.</p>
+                <button class="action-btn" onclick="document.getElementById('authModal').style.display='flex'">Ingresar / Crear Cuenta</button>
+            </div>
+        `;
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'none';
+        return;
+    }
+
     // Si tenemos datos, limpiamos el "Loading..." inicial y renderizamos la tabla
     if (globalStocksData.length > 0) {
         container.innerHTML = '';
@@ -1314,7 +1330,13 @@ window.handleAuthSubmit = async function() {
         }
         document.getElementById('authModal').style.display = 'none';
     } catch(err) {
-        errorEl.innerText = "Error: " + err.message;
+        if (err.code === 'auth/invalid-login-credentials' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+            errorEl.innerText = "Error: Credenciales inválidas. Verifica tu contraseña o elige 'Crear Cuenta' si eres nuevo.";
+        } else if (err.code === 'auth/email-already-in-use') {
+            errorEl.innerText = "Error: Este correo ya tiene una cuenta. Haz clic en 'Ingresar'.";
+        } else {
+            errorEl.innerText = "Error: " + err.message;
+        }
         errorEl.style.display = 'block';
     }
 };
@@ -1353,6 +1375,7 @@ onAuthStateChanged(auth, async (user) => {
         window.cloudSynced = false;
         document.getElementById('cloudStatusText').innerText = "Iniciar Sesión";
         document.getElementById('cloudStatusText').style.color = "inherit";
+        if (typeof refreshUI === 'function') refreshUI(); // Actualizar UI para ocultar panel
     }
 });
 
