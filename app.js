@@ -685,6 +685,7 @@ function renderPortfolio() {
             <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
                 <th style="padding: 0.75rem;">Activo</th>
                 <th style="padding: 0.75rem;">Cant.</th>
+                <th style="padding: 0.75rem;">Invertido</th>
                 <th style="padding: 0.75rem;">Base</th>
                 <th style="padding: 0.75rem;">Actual</th>
                 <th style="padding: 0.75rem;">%</th>
@@ -755,9 +756,10 @@ function renderPortfolio() {
         const flag = isArg ? ' 🇦🇷' : '';
 
         tableHtml += `
-            <tr style="border-bottom: 1px solid var(--border-color);">
-                <td style="padding: 0.75rem; font-weight: bold;">${displaySymbol}${flag}</td>
+            <tr style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
+                <td style="padding: 0.75rem; font-weight: bold; cursor: pointer; color: var(--accent-blue);" onclick="window.goToActivo('${pos.symbol}')" title="Ver análisis de ${displaySymbol}">${displaySymbol}${flag}</td>
                 <td style="padding: 0.75rem;">${qty}</td>
+                <td style="padding: 0.75rem;">$${inv.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${basePrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${currentPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color: ${colorClass};">${sign}${plPct.toFixed(2)}%</td>
