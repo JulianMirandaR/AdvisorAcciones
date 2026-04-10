@@ -73,12 +73,41 @@ window.toggleNotifications = () => {
     }
 };
 
-window.addNotification = (message, type = 'info') => {
+window.deleteNotification = (id, event) => {
+    if (event) event.stopPropagation();
+    window.notifications = window.notifications.filter(n => n.id !== id);
+    localStorage.setItem('advisor_notifications', JSON.stringify(window.notifications));
+    window.renderNotifications();
+};
+
+window.goToActivo = (symbol) => {
+    // Si estamos en la pestaña Mi Portafolio o Historial, ir a la vista general primero (o sólo buscar en general)
+    const allTab = document.querySelector('.tab-btn[data-term="all"]');
+    if (allTab) allTab.click(); // Esto hace refreshUI() y cambia la vista
+    
+    // Configurar búsqueda
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.value = symbol;
+        // Disparar evento para que se actualice
+        const event = new Event('input', { bubbles: true });
+        searchInput.dispatchEvent(event);
+    }
+    
+    // Cerrar el dropdown de notificaciones
+    const dropdown = document.getElementById('notifDropdown');
+    if (dropdown && dropdown.classList.contains('show')) {
+        window.toggleNotifications();
+    }
+};
+
+window.addNotification = (message, type = 'info', symbol = null) => {
     const now = new Date();
     window.notifications.unshift({
         id: now.getTime(),
         message,
         type,
+        symbol,
         time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' + now.toLocaleDateString()
     });
     
@@ -128,9 +157,12 @@ window.renderNotifications = () => {
     }
     
     body.innerHTML = window.notifications.map(n => `
-        <div class="notif-item ${n.type}">
-            ${n.message}
-            <span class="notif-time">${n.time}</span>
+        <div class="notif-item ${n.type}" ${n.symbol ? `onclick="window.goToActivo('${n.symbol}')"` : ''} style="display:flex; justify-content:space-between; align-items:flex-start; ${n.symbol ? 'cursor:pointer;' : ''}" title="${n.symbol ? 'Ir al activo' : ''}">
+            <div style="flex: 1; padding-right: 10px;">
+                ${n.message}
+                <span class="notif-time">${n.time}</span>
+            </div>
+            <button onclick="window.deleteNotification(${n.id}, event)" style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer; font-size:1.2rem; padding: 0 4px; line-height: 1;" title="Borrar notificación">&times;</button>
         </div>
     `).join('');
 };
@@ -155,22 +187,22 @@ function checkNotifications() {
         if (portfolioPos) {
             // Signal cambió a venta?
             if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
-                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell');
+                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
             }
             // Stop Loss o Take Profit alert
             if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
-                window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell');
+                window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell', stock.symbol);
             }
             if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
-                window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy');
+                window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
             }
         } else {
             // 2. Accion (no en portfolio) da de compra confirmada
             if ((sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE') {
                 if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
-                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy');
+                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy', stock.symbol);
                 } else {
-                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy');
+                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy', stock.symbol);
                 }
             }
         }
@@ -180,7 +212,7 @@ function checkNotifications() {
             if (!alert.triggered && alert.symbol === stock.symbol) {
                 if ((alert.direction === 'up' && stock.price >= alert.targetPrice) ||
                     (alert.direction === 'down' && stock.price <= alert.targetPrice)) {
-                    window.addNotification(`🎯 ALERTA DE PRECIO: ${stock.symbol} cruzó tu objetivo de $${alert.targetPrice.toFixed(2)} (Actual: $${stock.price})`, 'buy');
+                    window.addNotification(`🎯 ALERTA DE PRECIO: ${stock.symbol} cruzó tu objetivo de $${alert.targetPrice.toFixed(2)} (Actual: $${stock.price})`, 'buy', stock.symbol);
                     alert.triggered = true;
                     hasChanges = true;
                 }
