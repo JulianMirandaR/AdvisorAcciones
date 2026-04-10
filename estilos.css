@@ -742,6 +742,24 @@ header h1 {
         align-items: center;
         gap: 1rem;
     }
+
+    .portfolio-table {
+        font-size: 0.75rem !important;
+    }
+
+    .portfolio-table th, .portfolio-table td {
+        padding: 0.4rem 0.2rem !important;
+    }
+
+    .action-btn {
+        width: 100%;
+        padding: 0.8rem 1rem;
+    }
+
+    .notifications-dropdown {
+        width: 280px;
+        right: -10px;
+    }
 }
 
 /* --- Notificaciones --- */
