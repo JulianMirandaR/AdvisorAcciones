@@ -48,6 +48,28 @@ header {
     margin-bottom: 2rem;
 }
 
+.header-controls {
+    position: absolute;
+    top: 1rem;
+    right: 80px;
+    display: flex;
+    gap: 1rem;
+}
+
+.auth-btn {
+    background: var(--card-bg);
+    color: var(--accent-blue);
+    border: 1px solid var(--accent-blue);
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 header h1 {
     font-size: 2.5rem;
     font-weight: 700;
@@ -675,6 +697,15 @@ header h1 {
         padding: 0.5rem;
     }
 
+    header {
+        padding-top: 2.5rem; /* Space for absolute header items */
+    }
+
+    .header-controls {
+        top: 0.5rem;
+        right: 4rem; /* Place to the left of the bell icon */
+    }
+
     header h1 {
         font-size: 1.8rem;
     }
@@ -768,6 +799,13 @@ header h1 {
     top: 1rem;
     right: 1rem;
     cursor: pointer;
+}
+
+@media screen and (max-width: 860px) {
+    .notifications-wrapper {
+        top: 0.5rem;
+        right: 0.5rem;
+    }
 }
 
 .bell-icon {
