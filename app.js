@@ -56,6 +56,7 @@ window.notifications = JSON.parse(localStorage.getItem('advisor_notifications') 
 window.lastKnownSignals = JSON.parse(localStorage.getItem('advisor_last_signals') || '{}');
 window.priceAlerts = JSON.parse(localStorage.getItem('advisor_price_alerts') || '[]');
 window.cloudSynced = false;
+window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
 
 window.toggleNotifications = () => {
     const dropdown = document.getElementById('notifDropdown');
@@ -311,6 +312,27 @@ async function initDashboard() {
 function refreshUI() {
     const currentScroll = window.scrollY; // Guardar posición del scroll para evitar "saltos" molestos
     
+    // --- CARGANDO SESIÓN ---
+    if (!window.authInitialized) {
+        container.style.display = 'flex';
+        container.innerHTML = `
+            <div style="text-align:center; padding: 4rem 1rem; width: 100%;">
+                <div class="loader-spinner" style="margin: 0 auto 1.5rem auto;"></div>
+                <h2 style="margin-bottom: 1rem;">Verificando Sesión...</h2>
+                <p style="color: var(--text-secondary); margin-bottom: 2rem;">Sincronizando con la nube.</p>
+            </div>
+        `;
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'none';
+        
+        const heatmap = document.getElementById('marketHeatmap');
+        if (heatmap) heatmap.style.display = 'none';
+        heatmap.previousElementSibling.style.display = 'none'; 
+        document.querySelector('.tabs').style.display = 'none';
+        return;
+    }
+
     // --- ACCESO RESTRINGIDO SI NO HAY SESIÓN ---
     if (!window.cloudSynced) {
         container.style.display = 'flex';
@@ -1018,6 +1040,7 @@ window.handleAuthSubmit = async function() {
 
 // Monitor de estado de autenticación (Se ejecuta automáticamente cuando Firebase detecta estado)
 onAuthStateChanged(auth, async (user) => {
+    window.authInitialized = true;
     if (user) {
         window.cloudSynced = true;
         document.getElementById('cloudStatusText').innerText = "Conectado";
@@ -1041,11 +1064,11 @@ onAuthStateChanged(auth, async (user) => {
                     window.priceAlerts = d.priceAlerts;
                     localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
                 }
-                if(typeof refreshUI === 'function') refreshUI();
             }
         } catch(e) {
             console.error("Error cargando perfil nube", e);
         }
+        if(typeof refreshUI === 'function') refreshUI();
     } else {
         window.cloudSynced = false;
         document.getElementById('cloudStatusText').innerText = "Iniciar Sesión";

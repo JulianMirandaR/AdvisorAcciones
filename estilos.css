@@ -920,3 +920,18 @@ header h1 {
 .action-btn:active {
     transform: translateY(0);
 }
+
+/* --- Spinner de Carga --- */
+.loader-spinner {
+    width: 50px;
+    height: 50px;
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--accent-blue);
+    border-radius: 50%;
+    animation: spin-loader 1s linear infinite;
+}
+
+@keyframes spin-loader {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
