@@ -25,7 +25,7 @@
             <p>Análisis Técnico y Fundamental en Tiempo Real</p>
             <div class="header-controls">
                 <button onclick="window.openAuthModal()" class="auth-btn" id="cloudSyncBtn">
-                    ☁️ <span id="cloudStatusText">Iniciar Sesión</span>
+                    <span id="cloudStatusText">Iniciar Sesión</span>
                 </button>
             </div>
             <div class="notifications-wrapper" id="notifWrapper" onclick="toggleNotifications()">
@@ -53,9 +53,9 @@
 
 
                 <div class="tabs">
-                    <button class="tab-btn active" data-term="all">📊 Análisis General</button>
-                    <button class="tab-btn" data-term="portfolio" style="margin-left: auto; background-color: var(--accent-blue); color: white;">📁 Mi Portafolio</button>
-                    <button class="tab-btn" data-term="historial">📜 Historial</button>
+                    <button class="tab-btn active" data-term="all">Análisis General</button>
+                    <button class="tab-btn" data-term="portfolio" style="margin-left: auto; background-color: var(--accent-blue); color: white;">Mi Portafolio</button>
+                    <button class="tab-btn" data-term="historial">Historial</button>
                 </div>
 
                 <div class="controls-container">
@@ -67,7 +67,13 @@
                         <button class="filter-btn" data-filter="buy">Comprar</button>
                         <button class="filter-btn" data-filter="hold">Mantener</button>
                         <button class="filter-btn" data-filter="sell">Vender</button>
-                        <button class="filter-btn" data-filter="favorites">⭐ Favoritas</button>
+                        <button class="filter-btn" data-filter="favorites">Favoritas</button>
+                    </div>
+                    <div class="sorts" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; justify-content: center; margin-top: 0.5rem; width: 100%;">
+                        <span style="color: var(--text-secondary); font-size: 0.85rem; font-weight: bold; margin-right: 0.5rem;">Mayor Puntaje:</span>
+                        <button class="sort-btn filter-btn active" data-sort="general">General</button>
+                        <button class="sort-btn filter-btn" data-sort="short">Corto Plazo</button>
+                        <button class="sort-btn filter-btn" data-sort="long">Largo Plazo</button>
                     </div>
                 </div>
 

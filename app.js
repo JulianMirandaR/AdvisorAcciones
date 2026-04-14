@@ -43,6 +43,7 @@ let globalStocksData = []; // To keep track for re-sorting
 let globalMacroData = null; // Macroeconomic data (Buffett Indicator)
 let globalCclHistory = null; // Historical CCL Data
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
+let activeSort = 'general'; // general, short, long
 let searchTerm = '';
 let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
 let portfolio = JSON.parse(localStorage.getItem('advisor_portfolio') || '[]');
@@ -426,7 +427,15 @@ function refreshUI() {
     }
 
     // Sort by Score (Best opportunities first)
-    analyzedStocks.sort((a, b) => b.analysis.score - a.analysis.score);
+    analyzedStocks.sort((a, b) => {
+        if (activeSort === 'short') {
+            return b.analysis.corto_plazo.score - a.analysis.corto_plazo.score;
+        } else if (activeSort === 'long') {
+            return b.analysis.largo_plazo.score - a.analysis.largo_plazo.score;
+        } else {
+            return b.analysis.score - a.analysis.score;
+        }
+    });
 
 
 
@@ -605,7 +614,8 @@ tabs.forEach(tab => {
 
 // Search & Filter Events
 const searchInput = document.getElementById('searchInput');
-const filterBtns = document.querySelectorAll('.filter-btn');
+const filterBtns = document.querySelectorAll('.filters .filter-btn');
+const sortBtns = document.querySelectorAll('.sorts .sort-btn');
 
 if (searchInput) {
     searchInput.addEventListener('input', (e) => {
@@ -619,6 +629,15 @@ filterBtns.forEach(btn => {
         filterBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         activeFilter = btn.dataset.filter;
+        refreshUI();
+    });
+});
+
+sortBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        sortBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeSort = btn.dataset.sort;
         refreshUI();
     });
 });
@@ -891,7 +910,7 @@ function renderChart(data, canvasId) {
 
     container.innerHTML = ''; // Clear prev
 
-    const pointsToShow = (currentTerm === 'short' || currentTerm === 'all') ? -150 : -250;
+    const pointsToShow = -250;
     const dates = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
     const prices = data.history.prices ? data.history.prices.slice(pointsToShow) : [];
     const ema20 = data.history.ema20 ? data.history.ema20.slice(pointsToShow) : [];

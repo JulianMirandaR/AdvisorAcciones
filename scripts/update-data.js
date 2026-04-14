@@ -75,7 +75,8 @@ const activeStocks = [
     { symbol: 'ADBE', name: 'Adobe Inc.' },
     { symbol: 'GLOB', name: 'Globant S.A.' },
     { symbol: 'BTC-USD', name: 'Bitcoin (USD)' },
-    { symbol: 'NIO', name: 'NIO Inc.' }
+    { symbol: 'NIO', name: 'NIO Inc.' },
+    { symbol: 'NU', name: 'Nu Holdings Ltd.' }
 ];
 
 const staticFundamentals = {
@@ -133,7 +134,8 @@ const staticFundamentals = {
     'MU': { peRatio: 18.5, eps: 7.8, beta: 1.3, roe: 22.5 },
     'CVX': { peRatio: 14.5, eps: 12.5, beta: 0.9, roe: 15.5 },
     'ADBE': { peRatio: 45.2, eps: 16.5, beta: 1.25, roe: 35.5 },
-    'GLOB': { peRatio: 40.5, eps: 4.8, beta: 1.4, roe: 16.5 }
+    'GLOB': { peRatio: 40.5, eps: 4.8, beta: 1.4, roe: 16.5 },
+    'NU': { peRatio: 45.0, eps: 0.35, beta: 1.2, roe: 25.5 }
 };
 
 const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
