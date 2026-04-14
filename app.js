@@ -24,6 +24,7 @@ window.openNewsModal = (symbol) => handleOpenNewsModal(symbol, globalStocksData)
 window.runWalkForwardBacktest = runWalkForwardBacktest;
 
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
+// (El motor de recomendaciones se ha extraído a analysisEngine.js)
 
 // --- UI Rendering ---
 
@@ -374,8 +375,6 @@ function refreshUI() {
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
         
-
-        
         renderPortfolio();
         return;
     } else if (currentTerm === 'historial') {
@@ -384,8 +383,6 @@ function refreshUI() {
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
         
-
-        
         renderHistorial();
         return;
     } else {
@@ -393,8 +390,6 @@ function refreshUI() {
         controlsContainer.style.display = ''; 
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'none';
-        
-
     }
 
     // --- Filter & Search Logic ---
@@ -675,7 +670,7 @@ window.addToPortfolioPrompt = (symbol) => {
 
     // We use a small timeout to avoid double click issues or modal triggers if any
     setTimeout(() => {
-        const price = prompt(`Añadiendo ${symbol} al Portafolio\\nPrecio de Compra: (Ej: ${stockData.price})`, stockData.price);
+        const price = prompt(`Añadiendo ${symbol} al Portafolio\nPrecio de Compra: (Ej: ${stockData.price})`, stockData.price);
         if (price === null || isNaN(parseFloat(price))) return;
 
         const qty = prompt(`Cantidad de Acciones de ${symbol}:`, '10');
@@ -2016,4 +2011,3 @@ window.executeBacktestUI = () => {
 
     }, 100);
 };
-

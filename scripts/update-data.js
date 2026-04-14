@@ -328,8 +328,14 @@ async function main() {
                 const searchRes = await fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${symbol}&newsCount=5`, headerOptions);
                 const searchData = await searchRes.json();
                 if (searchData.news && searchData.news.length > 0) {
+                    const symbolBase = symbol.split('.')[0];
+                    const relatedNews = searchData.news.filter(n => {
+                        if (!n.relatedTickers || n.relatedTickers.length === 0) return false;
+                        return n.relatedTickers.includes(symbol) || n.relatedTickers.includes(symbolBase);
+                    });
+
                     let totalScore = 0;
-                    for (const n of searchData.news) {
+                    for (const n of relatedNews) {
                         const originalTitle = n.title || "";
                         const publisher = n.publisher || "Finance News";
                         const link = n.link || "#";
@@ -346,16 +352,29 @@ async function main() {
                             // Fallback to english if API fails
                         }
                         
-                        realNewsData.push({ title: translatedTitle, publisher, link, date: pubTime });
-
+                        let articleScore = 0;
                         const words = originalTitle.toLowerCase().match(/\w+/g) || [];
                         const positiveWords = ['soar','surge','jump','beat','raised','upgrade','upgrades','positive','gain','gains','high','profit','buy','record','bull','bullish','growth','strong','dividend','smashes','smash','outperform','soaring','surging','jumping','wins','partner'];
                         const negativeWords = ['fall','plunge','drop','miss','missed','lower','lowered','downgrade','downgrades','negative','loss','sell','risk','bear','bearish','lawsuit','probe','delay','cut','cuts','weak','slump','underperform','warning','penalty','sues','falling','plunging','dropping','fines','probe'];
                         
                         for (let word of words) {
-                            if (positiveWords.includes(word)) totalScore += 1;
-                            if (negativeWords.includes(word)) totalScore -= 1;
+                            if (positiveWords.includes(word)) articleScore += 1;
+                            if (negativeWords.includes(word)) articleScore -= 1;
                         }
+                        totalScore += articleScore;
+                        
+                        let articleSentimentStr = "NEUTRO";
+                        if (articleScore > 0) articleSentimentStr = "POSITIVO";
+                        else if (articleScore < 0) articleSentimentStr = "NEGATIVO";
+
+                        realNewsData.push({ 
+                            title: translatedTitle, 
+                            publisher, 
+                            link, 
+                            date: pubTime,
+                            sentiment: articleSentimentStr,
+                            score: articleScore
+                        });
                     }
                     newsScore = Math.max(-5, Math.min(5, totalScore));
                     if (newsScore >= 2) newsSentimentStr = "POSITIVO";

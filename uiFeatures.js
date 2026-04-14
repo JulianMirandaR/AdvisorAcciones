@@ -105,12 +105,26 @@ export function handleOpenNewsModal(symbol, globalStocksData) {
     if (stock.newsList && stock.newsList.length > 0) {
         htmlContent = stock.newsList.map((n, i) => {
             let borderColor = 'var(--border-color)';
-            if (i === 0 && sentiment > 1) borderColor = 'var(--accent-green)';
-            if (i === 0 && sentiment < -1) borderColor = 'var(--accent-red)';
+            let badgeHtml = '';
+            
+            // New sentiment logic using individual article's sentiment
+            if (n.sentiment === 'POSITIVO' || n.score > 0) {
+                borderColor = 'var(--accent-green)';
+                badgeHtml = `<span style="background: rgba(39, 174, 96, 0.2); color: var(--accent-green); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px;">BENEFICIA</span>`;
+            } else if (n.sentiment === 'NEGATIVO' || n.score < 0) {
+                borderColor = 'var(--accent-red)';
+                badgeHtml = `<span style="background: rgba(231, 76, 60, 0.2); color: var(--accent-red); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px;">PERJUDICA</span>`;
+            } else {
+                // Neutral formatting
+                badgeHtml = `<span style="background: rgba(149, 165, 166, 0.2); color: var(--text-secondary); padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px;">NEUTRO</span>`;
+            }
             
             return `
-            <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${borderColor}; margin-bottom: 0.5rem;">
-                <div style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.5rem;">${n.date} - ${n.publisher}</div>
+            <div style="background: var(--hover-bg); padding: 1rem; border-radius: 6px; border-left: 4px solid ${borderColor}; margin-bottom: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div style="font-size: 0.8rem; color: var(--text-secondary);">${n.date} - ${n.publisher}</div>
+                    ${badgeHtml}
+                </div>
                 <div style="font-size: 0.95rem; line-height: 1.4;">
                     <a href="${n.link}" target="_blank" style="color: var(--text-primary); text-decoration: none;">${n.title}</a>
                 </div>
