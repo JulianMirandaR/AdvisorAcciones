@@ -3,7 +3,7 @@ name: Daily Stock Data Sync (Backend)
 on:
   schedule:
     - cron: '0 14,16,18,20 * * 1-5' # A las 11:00, 13:00, 15:00 y 17:00 AR, de lunes a viernes
-  workflow_dispatch: # Permite correrlo manualmente desde la pestaña "Actions"
+  workflow_dispatch: # Permite correrlo manualmente desde la pestaña "Actions"  
 
 jobs:
   update:
