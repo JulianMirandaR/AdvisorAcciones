@@ -61,6 +61,33 @@ window.cloudSynced = false;
 window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
 window.autoTradingEnabled = JSON.parse(localStorage.getItem('advisor_auto_trade') || 'false');
 window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '10000'); // Capital simulado base para auto-trading
+window.autoPortfolio = JSON.parse(localStorage.getItem('advisor_auto_portfolio') || '[]');
+window.autoClosedTrades = JSON.parse(localStorage.getItem('advisor_auto_closed_trades') || '[]');
+
+window.removeFromAutoPortfolio = (index) => {
+    const pos = window.autoPortfolio[index];
+    const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
+    if (stockData) {
+        const currentPrice = parseFloat(stockData.price);
+        const profit = (currentPrice - pos.price) * pos.qty;
+        const profitPct = ((currentPrice - pos.price) / pos.price) * 100;
+        
+        window.autoClosedTrades.push({
+            symbol: pos.symbol,
+            entryPrice: pos.price,
+            exitPrice: currentPrice,
+            qty: pos.qty,
+            profit: profit,
+            profitPct: profitPct,
+            date: new Date().toISOString()
+        });
+        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+    }
+
+    window.autoPortfolio.splice(index, 1);
+    localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    if (currentTerm === 'bot_portfolio') renderPortfolio(true);
+};
 
 window.toggleAutoTrading = () => {
     window.autoTradingEnabled = !window.autoTradingEnabled;
@@ -207,10 +234,14 @@ function checkNotifications() {
     const marketCondition = getMarketCondition(vix);
     
     let hasChanges = false;
+    let hasBotChanges = false;
     
     globalStocksData.forEach(stock => {
         const portfolioPos = portfolio.find(p => p.symbol === stock.symbol);
         const portfolioInfo = portfolioPos ? { entryPrice: portfolioPos.price, highestPrice: portfolioPos.highestPrice } : null;
+        
+        // Auto bot info
+        const autoPos = window.autoPortfolio.find(p => p.symbol === stock.symbol);
         
         // Use default analysis logic
         const analysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo);
@@ -223,31 +254,43 @@ function checkNotifications() {
             // Signal cambió a venta?
             if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
                 window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
-                if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} por señal de ${sig}`, 'sell', stock.symbol);
-                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromPortfolio(idx);
-                }
             }
             // Stop Loss o Take Profit alert
             if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
                 window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell', stock.symbol);
-                if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: STOP LOSS Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
-                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromPortfolio(idx);
-                }
             }
             if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
                 window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
+            }
+        } 
+        
+        if (autoPos) {
+            // Evaluamos ventas para el Bot
+            if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
                 if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: TAKE PROFIT Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
-                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromPortfolio(idx);
+                    window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} por señal de ${sig}`, 'sell', stock.symbol);
+                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
                 }
             }
-        } else {
-            // 2. Accion (no en portfolio) da de compra confirmada
+            if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
+                if (window.autoTradingEnabled) {
+                    window.addNotification(`🤖 Auto-Trade: STOP LOSS Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
+                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
+                }
+            }
+            if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
+                if (window.autoTradingEnabled) {
+                    window.addNotification(`🤖 Auto-Trade: TAKE PROFIT Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
+                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
+                }
+            }
+        }
+        
+        // 2. Accion (no en portfolio) da de compra confirmada
+        if (!portfolioPos && !autoPos) {
             if ((sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE') {
                 if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
                     window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy', stock.symbol);
@@ -255,13 +298,13 @@ function checkNotifications() {
                         const tradeAmount = 1000; // Invertir 1000 por señal
                         const qty = tradeAmount / stock.price;
                         window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount}`, 'buy', stock.symbol);
-                        portfolio.push({
+                        window.autoPortfolio.push({
                             symbol: stock.symbol,
                             price: parseFloat(stock.price),
                             highestPrice: parseFloat(stock.price),
                             qty: qty
                         });
-                        hasChanges = true;
+                        hasBotChanges = true;
                     }
                 } else {
                     window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy', stock.symbol);
@@ -276,7 +319,7 @@ function checkNotifications() {
                     (alert.direction === 'down' && stock.price <= alert.targetPrice)) {
                     window.addNotification(`🎯 ALERTA DE PRECIO: ${stock.symbol} cruzó tu objetivo de $${alert.targetPrice.toFixed(2)} (Actual: $${stock.price})`, 'buy', stock.symbol);
                     alert.triggered = true;
-                    hasChanges = true;
+                    hasChanges = true; // Forzamos guardar la alerta
                 }
             }
         });
@@ -291,6 +334,10 @@ function checkNotifications() {
         localStorage.setItem('advisor_last_signals', JSON.stringify(window.lastKnownSignals));
         localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
         if(window.cloudSynced) window.syncDataToFirebase();
+    }
+    
+    if (hasBotChanges) {
+        localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
     }
 }
 // ---------------------------------
@@ -435,7 +482,7 @@ function refreshUI() {
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
         
-        renderPortfolio();
+        renderPortfolio(false);
         return;
     } else if (currentTerm === 'historial') {
         container.style.display = 'none';
@@ -443,8 +490,24 @@ function refreshUI() {
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
         
-        renderHistorial();
+        renderHistorial(false);
         return;
+    } else if (currentTerm === 'bot_portfolio') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'block';
+        if (historialContainer) historialContainer.style.display = 'none';
+        
+        renderPortfolio(true);
+        return;
+    } else if (currentTerm === 'bot_historial') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'block';
+        
+        renderHistorial(true);
+        return;        
     } else {
         container.style.display = ''; 
         controlsContainer.style.display = ''; 
@@ -767,8 +830,9 @@ window.addToPortfolioPrompt = (symbol) => {
     }, 50);
 };
 
-function renderPortfolio() {
-    portfolioContainer.innerHTML = '<h4>Mi Portafolio V1</h4>';
+function renderPortfolio(isBot = false) {
+    let targetPortfolio = isBot ? window.autoPortfolio : portfolio;
+    portfolioContainer.innerHTML = isBot ? '<h4>Portafolio Simulado (Bot Auto-Trading)</h4>' : '<h4>Mi Portafolio V1</h4>';
 
     let totalValue = 0;
     let totalInvestment = 0;
@@ -792,14 +856,14 @@ function renderPortfolio() {
         <tbody>
     `;
 
-    if (portfolio.length === 0) {
-        portfolioContainer.innerHTML += '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio está vacío. Añade acciones desde la lista principal clickeando en "+ Portafolio".</p>';
+    if (targetPortfolio.length === 0) {
+        portfolioContainer.innerHTML += isBot ? '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio del bot está vacío. Encendelo y espera a que la IA encuentre oportunidades.</p>' : '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio está vacío. Añade acciones desde la lista principal clickeando en "+ Portafolio".</p>';
         return;
     }
 
     let hasPortfolioChanges = false;
 
-    portfolio.forEach((pos, index) => {
+    targetPortfolio.forEach((pos, index) => {
         const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
 
         const currentPrice = stockData ? parseFloat(stockData.price) : pos.price; // fallback if not found
@@ -849,18 +913,20 @@ function renderPortfolio() {
         const isArg = pos.symbol.endsWith('.BA');
         const displaySymbol = isArg ? pos.symbol.replace('.BA', '') : pos.symbol;
         const flag = isArg ? ' 🇦🇷' : '';
+        
+        const deleteBtnHtml = isBot ? `<button onclick="removeFromAutoPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Forzar Venta">Vender</button>` : `<button onclick="removeFromPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Eliminar">🗑️</button>`;
 
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
                 <td style="padding: 0.75rem; font-weight: bold; cursor: pointer; color: var(--accent-blue);" onclick="window.goToActivo('${pos.symbol}')" title="Ver análisis de ${displaySymbol}">${displaySymbol}${flag}</td>
-                <td style="padding: 0.75rem;">${qty}</td>
+                <td style="padding: 0.75rem;">${qty.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${inv.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${basePrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">$${currentPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color: ${colorClass};">${sign}${plPct.toFixed(2)}%</td>
                 <td style="padding: 0.75rem; color: ${colorClass}; font-weight: bold;">${sign}$${pl.toFixed(2)}</td>
                 <td style="padding: 0.75rem; vertical-align: middle;">${signalBadge}</td>
-                <td style="padding: 0.75rem;"><button onclick="removeFromPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Eliminar">🗑️</button></td>
+                <td style="padding: 0.75rem;">${deleteBtnHtml}</td>
             </tr>
         `;
     });
@@ -868,8 +934,12 @@ function renderPortfolio() {
     tableHtml += `</tbody></table></div>`;
 
     if (hasPortfolioChanges) {
-        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
-        if(window.cloudSynced) window.syncDataToFirebase();
+        if (isBot) {
+            localStorage.setItem('advisor_auto_portfolio', JSON.stringify(targetPortfolio));
+        } else {
+            localStorage.setItem('advisor_portfolio', JSON.stringify(targetPortfolio));
+            if(window.cloudSynced) window.syncDataToFirebase();
+        }
     }
 
     // Summary
@@ -908,8 +978,8 @@ function renderPortfolio() {
         const ctxPie = document.getElementById('portfolioPieChart');
         if(!ctxPie) return;
         
-        const labels = portfolio.map(p => p.symbol);
-        const dataValues = portfolio.map(p => {
+        const labels = targetPortfolio.map(p => p.symbol);
+        const dataValues = targetPortfolio.map(p => {
             const st = globalStocksData.find(s => s.symbol === p.symbol);
             return st ? (st.price * p.qty) : (p.price * p.qty);
         });
@@ -1877,11 +1947,12 @@ function renderNewMacroIndicators() {
 
 
 
-function renderHistorial() {
+function renderHistorial(isBot = false) {
     if (!historialContainer) return;
-    historialContainer.innerHTML = '<h3 style="margin-bottom: 1rem;">Historial de Operaciones</h3>';
+    let targetTrades = isBot ? window.autoClosedTrades : closedTrades;
+    historialContainer.innerHTML = isBot ? '<h3 style="margin-bottom: 1rem;">Historial de Operaciones del Bot</h3>' : '<h3 style="margin-bottom: 1rem;">Historial de Operaciones Manuales</h3>';
     
-    if (closedTrades.length === 0) {
+    if (targetTrades.length === 0) {
         historialContainer.innerHTML += '<p style="color:var(--text-secondary);">No hay operaciones cerradas registradas.</p>';
         return;
     }
@@ -1906,7 +1977,7 @@ function renderHistorial() {
     `;
 
     // Sort by most recent
-    const sortedTrades = [...closedTrades].reverse();
+    const sortedTrades = [...targetTrades].reverse();
 
     sortedTrades.forEach(trade => {
         if (trade.profit > 0) wins++;
@@ -1930,13 +2001,13 @@ function renderHistorial() {
 
     tableHtml += '</tbody></table></div>';
     
-    const winRate = (wins / closedTrades.length) * 100;
+    const winRate = (wins / targetTrades.length) * 100;
     const netColor = netProfit >= 0 ? "var(--accent-green)" : "var(--accent-red)";
     const netSign = netProfit >= 0 ? "+" : "";
 
     const statsHtml = `
         <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
-            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Operaciones</span><br><b style="font-size: 1.25rem;">${closedTrades.length}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Operaciones</span><br><b style="font-size: 1.25rem;">${targetTrades.length}</b></div>
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Win Rate</span><br><b style="font-size: 1.25rem;">${winRate.toFixed(1)}%</b></div>
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Beneficio Neto</span><br><b style="color:${netColor}; font-size: 1.25rem;">${netSign}$${netProfit.toFixed(2)}</b></div>
         </div>
