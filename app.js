@@ -59,6 +59,38 @@ window.lastKnownSignals = JSON.parse(localStorage.getItem('advisor_last_signals'
 window.priceAlerts = JSON.parse(localStorage.getItem('advisor_price_alerts') || '[]');
 window.cloudSynced = false;
 window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
+window.autoTradingEnabled = JSON.parse(localStorage.getItem('advisor_auto_trade') || 'false');
+window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '10000'); // Capital simulado base para auto-trading
+
+window.toggleAutoTrading = () => {
+    window.autoTradingEnabled = !window.autoTradingEnabled;
+    localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
+    window.updateAutoTradeUI();
+    
+    if (window.autoTradingEnabled) {
+        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente basado en señales de Alta Confianza.", "info");
+        // Trigger a check immediately to see if there are pending signals
+        if (globalStocksData.length > 0) {
+            checkNotifications();
+            refreshUI();
+        }
+    } else {
+        window.addNotification("🤖 Bot de Auto-Trading DESACTIVADO. Operaciones pausadas.", "info");
+    }
+};
+
+window.updateAutoTradeUI = () => {
+    const btn = document.getElementById('autoTradeBtn');
+    if (btn) {
+        if (window.autoTradingEnabled) {
+            btn.style.backgroundColor = 'var(--accent-green)';
+            btn.style.boxShadow = '0 0 8px var(--accent-green)';
+        } else {
+            btn.style.backgroundColor = 'var(--accent-red)';
+            btn.style.boxShadow = '0 0 5px var(--accent-red)';
+        }
+    }
+};
 
 window.toggleNotifications = () => {
     const dropdown = document.getElementById('notifDropdown');
@@ -191,19 +223,46 @@ function checkNotifications() {
             // Signal cambió a venta?
             if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
                 window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
+                if (window.autoTradingEnabled) {
+                    window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} por señal de ${sig}`, 'sell', stock.symbol);
+                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromPortfolio(idx);
+                }
             }
             // Stop Loss o Take Profit alert
             if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
                 window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell', stock.symbol);
+                if (window.autoTradingEnabled) {
+                    window.addNotification(`🤖 Auto-Trade: STOP LOSS Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
+                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromPortfolio(idx);
+                }
             }
             if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
                 window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
+                if (window.autoTradingEnabled) {
+                    window.addNotification(`🤖 Auto-Trade: TAKE PROFIT Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
+                    const idx = portfolio.findIndex(p => p.symbol === stock.symbol);
+                    if (idx !== -1) window.removeFromPortfolio(idx);
+                }
             }
         } else {
             // 2. Accion (no en portfolio) da de compra confirmada
             if ((sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE') {
                 if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
                     window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy', stock.symbol);
+                    if (window.autoTradingEnabled) {
+                        const tradeAmount = 1000; // Invertir 1000 por señal
+                        const qty = tradeAmount / stock.price;
+                        window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount}`, 'buy', stock.symbol);
+                        portfolio.push({
+                            symbol: stock.symbol,
+                            price: parseFloat(stock.price),
+                            highestPrice: parseFloat(stock.price),
+                            qty: qty
+                        });
+                        hasChanges = true;
+                    }
                 } else {
                     window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy', stock.symbol);
                 }
@@ -891,6 +950,7 @@ function renderPortfolio() {
 }
 
 // Init
+window.updateAutoTradeUI();
 renderMarketStatus();
 initDashboard();
 
