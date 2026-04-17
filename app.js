@@ -95,7 +95,7 @@ window.toggleAutoTrading = () => {
     window.updateAutoTradeUI();
     
     if (window.autoTradingEnabled) {
-        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente en señales de Compra Fuerte o Alta Confianza.", "info");
+        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente en señales de Compra Fuerte, Alta Confianza o Setups Estratégicos.", "info");
         // Trigger a check immediately to see if there are pending signals
         if (globalStocksData.length > 0) {
             checkNotifications();
@@ -303,10 +303,17 @@ function checkNotifications() {
             }
 
             // Lógica del Bot (No requiere transición, toma las oportunidades activas que sean muy sólidas)
-            if (window.autoTradingEnabled && (sig === 'COMPRA FUERTE' || analysis.confirmationLevel === 'ALTA CONFIANZA')) {
+            const isFuerte = sig === 'COMPRA FUERTE';
+            const isIA = analysis.confirmationLevel === 'ALTA CONFIANZA';
+            const isSetup = !!analysis.setupDetected;
+            const isCompraBasica = sig.includes('COMPRA');
+
+            if (window.autoTradingEnabled && (isFuerte || isIA || (isSetup && isCompraBasica))) {
                 const tradeAmount = 1000; // Invertir 1000 por señal
                 const qty = tradeAmount / stock.price;
-                const reasonStr = analysis.confirmationLevel === 'ALTA CONFIANZA' ? 'Confirmado IA' : 'Técnico Fuerte';
+                let reasonStr = 'Técnico Fuerte';
+                if (isIA) reasonStr = 'Confirmado IA';
+                else if (isSetup && !isFuerte) reasonStr = `Setup: ${analysis.setupDetected}`;
                 
                 window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount} (${reasonStr})`, 'buy', stock.symbol);
                 window.autoPortfolio.push({
