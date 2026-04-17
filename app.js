@@ -95,7 +95,7 @@ window.toggleAutoTrading = () => {
     window.updateAutoTradeUI();
     
     if (window.autoTradingEnabled) {
-        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente basado en señales de Alta Confianza.", "info");
+        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente en señales de Compra Fuerte o Alta Confianza.", "info");
         // Trigger a check immediately to see if there are pending signals
         if (globalStocksData.length > 0) {
             checkNotifications();
@@ -291,24 +291,31 @@ function checkNotifications() {
         
         // 2. Accion (no en portfolio) da de compra confirmada
         if (!portfolioPos && !autoPos) {
-            if ((sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE') {
+            const isNewBuySignal = (sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE';
+
+            // Alerta visual para el usuario (solo notifica en transiciones)
+            if (isNewBuySignal) {
                 if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
                     window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy', stock.symbol);
-                    if (window.autoTradingEnabled) {
-                        const tradeAmount = 1000; // Invertir 1000 por señal
-                        const qty = tradeAmount / stock.price;
-                        window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount}`, 'buy', stock.symbol);
-                        window.autoPortfolio.push({
-                            symbol: stock.symbol,
-                            price: parseFloat(stock.price),
-                            highestPrice: parseFloat(stock.price),
-                            qty: qty
-                        });
-                        hasBotChanges = true;
-                    }
                 } else {
                     window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy', stock.symbol);
                 }
+            }
+
+            // Lógica del Bot (No requiere transición, toma las oportunidades activas que sean muy sólidas)
+            if (window.autoTradingEnabled && (sig === 'COMPRA FUERTE' || analysis.confirmationLevel === 'ALTA CONFIANZA')) {
+                const tradeAmount = 1000; // Invertir 1000 por señal
+                const qty = tradeAmount / stock.price;
+                const reasonStr = analysis.confirmationLevel === 'ALTA CONFIANZA' ? 'Confirmado IA' : 'Técnico Fuerte';
+                
+                window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount} (${reasonStr})`, 'buy', stock.symbol);
+                window.autoPortfolio.push({
+                    symbol: stock.symbol,
+                    price: parseFloat(stock.price),
+                    highestPrice: parseFloat(stock.price),
+                    qty: qty
+                });
+                hasBotChanges = true;
             }
         }
         
