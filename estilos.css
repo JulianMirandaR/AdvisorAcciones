@@ -1,27 +1,20 @@
 :root {
-    /* Sleek Obsidian Palette */
-    --bg-color: #030712;
-    /* Ultra dark blue/black (Gray 950) */
-    --card-bg: #111827;
-    /* Gray 900 */
-    --text-primary: #f9fafb;
-    /* Gray 50 */
-    --text-secondary: #9ca3af;
-    /* Gray 400 */
+    /* Premium Midnight Fintech Palette */
+    --bg-color: #040914; /* Ultra deep midnight blue */
+    --card-bg: #0b1320; /* Dark slate blue */
+    --text-primary: #f8fafc; /* Crisp white-blue */
+    --text-secondary: #8b9eb3; /* Cool slate gray */
 
     /* Vibrant Accents */
-    --accent-blue: #0ea5e9;
-    /* Sky 500 - Neon Blue */
-    --accent-green: #10b981;
-    /* Emerald 500 */
-    --accent-red: #f43f5e;
-    /* Rose 500 */
+    --accent-blue: #0ea5e9; /* Sky blue */
+    --accent-indigo: #6366f1; /* Neon indigo */
+    --accent-green: #10b981; /* Emerald */
+    --accent-red: #ef4444; /* Coral red */
+    --accent-gold: #f59e0b; /* Amber */
 
-    --border-color: #1f2937;
-    /* Gray 800 */
-    --hover-bg: #1f2937;
-    /* Gray 800 */
-    --glow-shadow: 0 0 15px rgba(14, 165, 233, 0.15);
+    --border-color: rgba(148, 163, 184, 0.12); /* Subtle glass border */
+    --hover-bg: rgba(14, 165, 233, 0.08); /* Blue-tinted hover */
+    --glow-shadow: 0 0 25px rgba(99, 102, 241, 0.15); /* Indigo glow */
 }
 
 * {
@@ -71,16 +64,17 @@ header {
 }
 
 header h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
-    background: linear-gradient(to right, var(--accent-blue), #6366f1);
-    /* Gradient Blue -> Indigo */
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     position: relative;
     display: inline-block;
     color: transparent;
     -webkit-background-clip: text;
     background-clip: text;
     margin-bottom: 0.5rem;
+    filter: drop-shadow(0 4px 6px rgba(14, 165, 233, 0.2));
 }
 
 .market-status {
@@ -140,10 +134,11 @@ header h1 {
 }
 
 .tab-btn.active {
-    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     border-color: transparent;
     color: white;
-    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
+    box-shadow: 0 6px 15px rgba(99, 102, 241, 0.3);
+    transform: translateY(-2px);
 }
 
 .grid-container {
@@ -599,12 +594,14 @@ header h1 {
 .heatmap-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 0;
     margin-bottom: 2rem;
-    padding: 1rem;
+    padding: 0;
     background-color: var(--card-bg);
     border-radius: 12px;
     justify-content: center;
+    border: 1px solid var(--border-color);
+    overflow: hidden; /* For smooth rounded corners */
 }
 
 .heatmap-block {

@@ -285,12 +285,19 @@ function executeTrade(stock, analysis, executionScore, reasonStr) {
     const MAX_POSITIONS = 5;
     if (window.autoPortfolio.length >= MAX_POSITIONS) return false;
 
-    // Position Sizing Dinámico (2% del capital)
+    // Position Sizing Dinámico (2% del capital en USD de base)
     const RISK_PER_TRADE = 0.02;
-    const tradeAmount = window.simCapital * RISK_PER_TRADE;
-    const qty = tradeAmount / stock.price;
-
-    window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
+    const usdTradeAmount = window.simCapital * RISK_PER_TRADE;
+    
+    const isArg = stock.symbol.endsWith('.BA');
+    const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
+    
+    // Si la acción se compra en pesos, adaptamos la magnitud del capital usando el tipo de cambio
+    const tradeAmountNominal = isArg ? (usdTradeAmount * ccl) : usdTradeAmount;
+    const qty = tradeAmountNominal / stock.price;
+    
+    const currStr = isArg ? 'AR$' : 'U$D';
+    window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
     
     window.autoPortfolio.push({
         symbol: stock.symbol,
@@ -1707,10 +1714,10 @@ function renderHeatmap() {
     // Styling the container to look like a True Treemap (100% width filled)
     heatmapContainer.style.display = 'flex';
     heatmapContainer.style.flexWrap = 'wrap';
-    heatmapContainer.style.gap = '2px';
-    heatmapContainer.style.backgroundColor = '#000';
-    heatmapContainer.style.padding = '2px';
-    heatmapContainer.style.borderRadius = '4px';
+    heatmapContainer.style.gap = '0';
+    heatmapContainer.style.backgroundColor = 'transparent';
+    heatmapContainer.style.padding = '0';
+    heatmapContainer.style.borderRadius = '0';
     heatmapContainer.style.width = '100%';
     // Eliminado el estiramiento vertical forzado (65vh y alignContent)
 
@@ -1765,16 +1772,18 @@ function renderHeatmap() {
         sectorDiv.style.flex = `${sectorData.weight} 1 ${sectorFlexBasis}px`; 
         sectorDiv.style.display = 'flex';
         sectorDiv.style.flexDirection = 'column';
-        sectorDiv.style.border = '1px solid #111'; // Borde oscuro entre sectores
-        sectorDiv.style.backgroundColor = '#000';
-        sectorDiv.style.minHeight = '100px'; // Para que no colapsen
+        sectorDiv.style.border = '1px solid var(--border-color)';
+        sectorDiv.style.backgroundColor = 'var(--card-bg)';
+        sectorDiv.style.minHeight = '100px'; 
         
         const sectorTitle = document.createElement('div');
         sectorTitle.textContent = sectorName;
-        sectorTitle.style.fontSize = '0.7rem';
-        sectorTitle.style.color = '#ccc';
-        sectorTitle.style.padding = '2px 4px';
-        sectorTitle.style.backgroundColor = '#111';
+        sectorTitle.style.fontSize = '0.75rem';
+        sectorTitle.style.fontWeight = 'bold';
+        sectorTitle.style.color = 'var(--text-secondary)';
+        sectorTitle.style.padding = '4px 6px';
+        sectorTitle.style.backgroundColor = 'rgba(255,255,255,0.02)';
+        sectorTitle.style.borderBottom = '1px solid var(--border-color)';
         sectorTitle.style.whiteSpace = 'nowrap';
         sectorTitle.style.overflow = 'hidden';
         sectorTitle.style.textOverflow = 'ellipsis';
