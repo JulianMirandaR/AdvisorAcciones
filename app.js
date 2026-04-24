@@ -2160,8 +2160,17 @@ function renderHistorial(isBot = false) {
     const sortedTrades = [...targetTrades].reverse();
 
     sortedTrades.forEach(trade => {
+        const isArg = trade.symbol.endsWith('.BA');
+        const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
+        const curStr = isArg ? 'AR$' : 'U$D';
+
+        let usdProfit = trade.profit;
+        if (isArg && ccl > 0) {
+            usdProfit = trade.profit / ccl;
+        }
+
         if (trade.profit > 0) wins++;
-        netProfit += trade.profit;
+        netProfit += usdProfit;
         
         const dateStr = new Date(trade.date).toLocaleDateString();
         const color = trade.profit >= 0 ? "var(--accent-green)" : "var(--accent-red)";
@@ -2171,9 +2180,9 @@ function renderHistorial(isBot = false) {
             <tr style="border-bottom: 1px solid var(--border-color);">
                 <td style="padding: 0.75rem; color:var(--text-secondary);">${dateStr}</td>
                 <td style="padding: 0.75rem; font-weight: bold;">${trade.symbol}</td>
-                <td style="padding: 0.75rem;">$${trade.entryPrice.toFixed(2)}</td>
-                <td style="padding: 0.75rem;">$${trade.exitPrice.toFixed(2)}</td>
-                <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}$${trade.profit.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">${curStr} ${trade.entryPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">${curStr} ${trade.exitPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}${curStr} ${trade.profit.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color};">${sign}${trade.profitPct.toFixed(2)}%</td>
             </tr>
         `;
@@ -2189,7 +2198,7 @@ function renderHistorial(isBot = false) {
         <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Operaciones</span><br><b style="font-size: 1.25rem;">${targetTrades.length}</b></div>
             <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Win Rate</span><br><b style="font-size: 1.25rem;">${winRate.toFixed(1)}%</b></div>
-            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Beneficio Neto</span><br><b style="color:${netColor}; font-size: 1.25rem;">${netSign}$${netProfit.toFixed(2)}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Beneficio Neto (USD)</span><br><b style="color:${netColor}; font-size: 1.25rem;">${netSign}U$D ${netProfit.toFixed(2)}</b></div>
         </div>
     `;
 
