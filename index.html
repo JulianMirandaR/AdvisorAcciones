@@ -206,6 +206,26 @@
             </div>
         </div>
 
+        <!-- Agregar al Portafolio Modal -->
+        <div id="addPortfolioModal" class="modal">
+            <div class="modal-content" style="max-width: 400px; text-align: center;">
+                <span style="float:right; font-size:2rem; cursor:pointer;" onclick="document.getElementById('addPortfolioModal').style.display='none'">&times;</span>
+                <h3 style="margin-bottom: 1rem;">💼 Añadir al Portafolio</h3>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Registra tu compra para <b id="addPortfolioSymbolText"></b>.</p>
+                <form id="addPortfolioForm" onsubmit="event.preventDefault(); window.confirmAddToPortfolio();">
+                    <div style="text-align: left; margin-bottom: 1rem;">
+                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Precio de Compra</label>
+                        <input type="number" id="addPortfolioPrice" step="any" required style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
+                    </div>
+                    <div style="text-align: left; margin-bottom: 1.5rem;">
+                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Cantidad de Acciones</label>
+                        <input type="number" id="addPortfolioQty" step="any" required value="10" style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
+                    </div>
+                    <button type="submit" style="background: var(--accent-blue); color: white; padding: 0.8rem 2rem; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">Añadir</button>
+                </form>
+            </div>
+        </div>
+
         <!-- Alertas de Precio Modal -->
         <div id="alertModal" class="modal">
             <div class="modal-content" style="max-width: 400px; text-align: center;">

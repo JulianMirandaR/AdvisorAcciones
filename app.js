@@ -907,12 +907,49 @@ window.toggleWatchlist = (symbol, event) => {
     const index = watchlist.indexOf(symbol);
     if (index === -1) {
         watchlist.push(symbol);
-    } else {
-        watchlist.splice(index, 1);
     }
     localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
     if (window.cloudSynced) window.syncDataToFirebase();
     refreshUI();
+};
+
+window.clearPortfolio = (isBot) => {
+    if(!confirm('¿Estás seguro que deseas vaciar este portafolio por completo? No podrás recuperarlo.')) return;
+    if (isBot) {
+        window.autoPortfolio = [];
+        localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    } else {
+        portfolio = [];
+        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+    }
+    if (window.cloudSynced) window.syncDataToFirebase();
+    renderPortfolio(isBot);
+};
+
+window.clearHistory = (isBot) => {
+    if(!confirm('¿Estás seguro que deseas vaciar el historial de operaciones por completo?')) return;
+    if (isBot) {
+        window.autoClosedTrades = [];
+        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+    } else {
+        closedTrades = [];
+        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
+    }
+    if (window.cloudSynced) window.syncDataToFirebase();
+    renderHistorial(isBot);
+};
+
+window.removeFromHistory = (index, isBot) => {
+    if (!confirm('¿Eliminar permanentemente este registro del historial?')) return;
+    if (isBot) {
+        window.autoClosedTrades.splice(index, 1);
+        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+    } else {
+        closedTrades.splice(index, 1);
+        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
+    }
+    if (window.cloudSynced) window.syncDataToFirebase();
+    renderHistorial(isBot);
 };
 
 window.removeFromPortfolio = (index) => {
@@ -942,29 +979,49 @@ window.removeFromPortfolio = (index) => {
     renderPortfolio();
 };
 
+let currentAddSymbol = '';
+
 window.addToPortfolioPrompt = (symbol) => {
     const stockData = globalStocksData.find(s => s.symbol === symbol);
     if (!stockData) return;
 
-    // We use a small timeout to avoid double click issues or modal triggers if any
-    setTimeout(() => {
-        const price = prompt(`Añadiendo ${symbol} al Portafolio\nPrecio de Compra: (Ej: ${stockData.price})`, stockData.price);
-        if (price === null || isNaN(parseFloat(price))) return;
+    currentAddSymbol = symbol;
+    document.getElementById('addPortfolioSymbolText').innerText = symbol;
+    document.getElementById('addPortfolioPrice').value = stockData.price;
+    document.getElementById('addPortfolioQty').value = 10;
+    
+    // Mostramos el modal custom
+    document.getElementById('addPortfolioModal').style.display = 'flex';
+};
 
-        const qty = prompt(`Cantidad de Acciones de ${symbol}:`, '10');
-        if (qty === null || isNaN(parseFloat(qty))) return;
+window.confirmAddToPortfolio = () => {
+    if (!currentAddSymbol) return;
 
-        portfolio.push({
-            symbol: symbol,
-            price: parseFloat(price),
-            highestPrice: parseFloat(price),
-            qty: parseFloat(qty)
-        });
-        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
-        if(window.cloudSynced) window.syncDataToFirebase();
-        alert(`${symbol} añadida al portafolio exitosamente.`);
-        renderPortfolio();
-    }, 50);
+    const priceInput = document.getElementById('addPortfolioPrice').value;
+    const qtyInput = document.getElementById('addPortfolioQty').value;
+
+    const price = parseFloat(priceInput);
+    const qty = parseFloat(qtyInput);
+
+    if (isNaN(price) || isNaN(qty) || price <= 0 || qty <= 0) {
+        window.addNotification("Por favor, ingresa números válidos mayores a 0.", "error");
+        return;
+    }
+
+    portfolio.push({
+        symbol: currentAddSymbol,
+        price: price,
+        highestPrice: price,
+        qty: qty
+    });
+
+    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
+    if(window.cloudSynced) window.syncDataToFirebase();
+    
+    // Ocultar modal y dar feedback
+    document.getElementById('addPortfolioModal').style.display = 'none';
+    window.addNotification(`✅ ${currentAddSymbol} añadida a tu portafolio exitosamente.`, "success");
+    renderPortfolio();
 };
 
 function renderPortfolio(isBot = false) {
@@ -1119,10 +1176,15 @@ function renderPortfolio(isBot = false) {
 `;
 
     const toggleHtml = `
-        <div style="margin-bottom: 1rem; text-align: right;">
-            <span style="font-size: 0.85rem; color: var(--text-secondary); margin-right: 0.5rem;">Señal de Recomendación:</span>
-            <button onclick="togglePortfolioTerm('short')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'short' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'short' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem;">Corto Plazo</button>
-            <button onclick="togglePortfolioTerm('long')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'long' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'long' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem; margin-left: 0.5rem;">Largo Plazo</button>
+        <div style="margin-bottom: 1rem; display:flex; justify-content: space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+            <div>
+                <button onclick="window.clearPortfolio(${isBot})" style="background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Vaciar Portafolio</button>
+            </div>
+            <div>
+                <span style="font-size: 0.85rem; color: var(--text-secondary); margin-right: 0.5rem;">Señal de Recomendación:</span>
+                <button onclick="togglePortfolioTerm('short')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'short' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'short' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem;">Corto Plazo</button>
+                <button onclick="togglePortfolioTerm('long')" style="padding: 0.3rem 0.8rem; cursor: pointer; border-radius: 4px; border: 1px solid var(--border-color); background: ${window.portfolioTerm === 'long' ? 'var(--accent-blue)' : 'var(--card-bg)'}; color: ${window.portfolioTerm === 'long' ? '#fff' : 'var(--text-primary)'}; font-size: 0.8rem; margin-left: 0.5rem;">Largo Plazo</button>
+            </div>
         </div>
     `;
 
@@ -1654,10 +1716,10 @@ function renderHeatmap() {
 
     const sectorMapping = {
         'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología', 'AVGO': 'Tecnología',
-        'AMZN': 'Comercio Minorista', 'NFLX': 'Servicios Consumo', 'KO': 'Consumo', 'PEP': 'Consumo', 'WMT': 'Comercio Minorista', 'MCD': 'Servicios Consumo', 'NKE': 'Consumo', 'DIS': 'Servicios Consumo', 'BABA': 'Comercio Minorista', 'MELI': 'Comercio Minorista', 'UBER': 'Transporte', 'TSLA': 'Automotriz', 'NIO': 'Automotriz',
-        'JPM': 'Finanzas', 'V': 'Finanzas', 'MA': 'Finanzas', 'BAC': 'Finanzas', 'XP': 'Finanzas', 'PYPL': 'Finanzas', 'SQ': 'Finanzas', 'COIN': 'Finanzas', 'UPST': 'Finanzas',
+        'AMZN': 'Consumo y Retail', 'NFLX': 'Consumo y Retail', 'KO': 'Consumo y Retail', 'PEP': 'Consumo y Retail', 'WMT': 'Consumo y Retail', 'MCD': 'Consumo y Retail', 'NKE': 'Consumo y Retail', 'DIS': 'Consumo y Retail', 'BABA': 'Consumo y Retail', 'MELI': 'Consumo y Retail', 'UBER': 'Consumo y Retail', 'TSLA': 'Consumo y Retail', 'NIO': 'Consumo y Retail',
+        'JPM': 'Finanzas e Índices', 'V': 'Finanzas e Índices', 'MA': 'Finanzas e Índices', 'BAC': 'Finanzas e Índices', 'XP': 'Finanzas e Índices', 'PYPL': 'Finanzas e Índices', 'SQ': 'Finanzas e Índices', 'COIN': 'Finanzas e Índices', 'UPST': 'Finanzas e Índices', 'SPY': 'Finanzas e Índices', 'BTC-USD': 'Finanzas e Índices',
         'YPFD.BA': 'Mercado AR', 'PAMP.BA': 'Mercado AR', 'CEPU.BA': 'Mercado AR', 'TGSU2.BA': 'Mercado AR', 'EDN.BA': 'Mercado AR', 'CRES.BA': 'Mercado AR', 'ALUA.BA': 'Mercado AR', 'TXAR.BA': 'Mercado AR', 'BMA.BA': 'Mercado AR', 'GGAL.BA': 'Mercado AR',
-        'LLY': 'Salud', 'SPY': 'ETFs', 'BA': 'Industrial', 'YPF': 'Energía', 'CVX': 'Energía', 'BTC-USD': 'Criptomonedas'
+        'LLY': 'Industria y Salud', 'BA': 'Industria y Salud', 'YPF': 'Industria y Salud', 'CVX': 'Industria y Salud'
     };
 
     // Agrupar stocks por sector
@@ -2130,7 +2192,10 @@ function renderNewMacroIndicators() {
 function renderHistorial(isBot = false) {
     if (!historialContainer) return;
     let targetTrades = isBot ? window.autoClosedTrades : closedTrades;
-    historialContainer.innerHTML = isBot ? '<h3 style="margin-bottom: 1rem;">Historial de Operaciones del Bot</h3>' : '<h3 style="margin-bottom: 1rem;">Historial de Operaciones Manuales</h3>';
+    
+    const clearBtn = targetTrades.length > 0 ? `<button onclick="window.clearHistory(${isBot})" style="float:right; background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Limpiar Historial</button>` : '';
+
+    historialContainer.innerHTML = isBot ? `<h3 style="margin-bottom: 1rem;">Historial de Operaciones del Bot ${clearBtn}</h3>` : `<h3 style="margin-bottom: 1rem;">Historial de Operaciones Manuales ${clearBtn}</h3>`;
     
     if (targetTrades.length === 0) {
         historialContainer.innerHTML += '<p style="color:var(--text-secondary);">No hay operaciones cerradas registradas.</p>';
@@ -2142,7 +2207,7 @@ function renderHistorial(isBot = false) {
     
     let tableHtml = `
     <div style="overflow-x: auto;">
-    <table style="width:100%; text-align:left; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem;">
+    <table class="portfolio-table" style="width:100%; text-align:left; border-collapse: collapse; margin-top: 1rem; font-size: 0.9rem;">
         <thead>
             <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
                 <th style="padding: 0.75rem;">Fecha</th>
@@ -2151,13 +2216,14 @@ function renderHistorial(isBot = false) {
                 <th style="padding: 0.75rem;">Salida</th>
                 <th style="padding: 0.75rem;">P/L ($)</th>
                 <th style="padding: 0.75rem;">P/L (%)</th>
+                <th style="padding: 0.75rem;"></th>
             </tr>
         </thead>
         <tbody>
     `;
 
     // Sort by most recent
-    const sortedTrades = [...targetTrades].reverse();
+    const sortedTrades = targetTrades.map((t, index) => ({...t, originalIndex: index})).reverse();
 
     sortedTrades.forEach(trade => {
         const isArg = trade.symbol.endsWith('.BA');
@@ -2184,6 +2250,7 @@ function renderHistorial(isBot = false) {
                 <td style="padding: 0.75rem;">${curStr} ${trade.exitPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}${curStr} ${trade.profit.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color};">${sign}${trade.profitPct.toFixed(2)}%</td>
+                <td style="padding: 0.75rem; text-align:right;"><button onclick="window.removeFromHistory(${trade.originalIndex}, ${isBot})" style="background:transparent; border:none; cursor:pointer; opacity:0.6; transition:0.2s;" onmouseover="this.style.opacity='1'; this.style.transform='scale(1.1)';" onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)';" title="Borrar Fila">❌</button></td>
             </tr>
         `;
     });
