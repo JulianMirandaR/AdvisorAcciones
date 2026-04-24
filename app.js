@@ -64,7 +64,7 @@ window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '1
 window.autoPortfolio = JSON.parse(localStorage.getItem('advisor_auto_portfolio') || '[]');
 window.autoClosedTrades = JSON.parse(localStorage.getItem('advisor_auto_closed_trades') || '[]');
 
-window.removeFromAutoPortfolio = (index) => {
+window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido") => {
     const pos = window.autoPortfolio[index];
     const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
     if (stockData) {
@@ -79,7 +79,11 @@ window.removeFromAutoPortfolio = (index) => {
             qty: pos.qty,
             profit: profit,
             profitPct: profitPct,
-            date: new Date().toISOString()
+            date: new Date().toISOString(),
+            exitReason: exitReason,
+            entryReason: pos.entryReason || "Desconocido",
+            executionScore: pos.executionScore || null,
+            marketCondition: currentMarketCondition
         });
         localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
     }
@@ -229,6 +233,142 @@ window.renderNotifications = () => {
     `).join('');
 };
 
+// --- AUTO TRADING BOT ENGINE ---
+const BOT_SIGNALS = {
+    STRONG_BUY: 'COMPRA FUERTE',
+    BUY: 'COMPRA',
+    SETUP: 'SETUP',
+    SELL: 'VENTA',
+    WEAK: 'DEBIL'
+};
+
+function calculateExecutionScore(stock, analysis) {
+    let score = 0;
+    const sig = analysis.signal;
+    const aiData = analysis.ai;
+
+    if (sig === BOT_SIGNALS.STRONG_BUY) score += 4;
+    if (analysis.confirmationLevel === 'ALTA CONFIANZA') score += 3;
+    if (analysis.setupDetected) score += 2;
+    if (analysis.largo_plazo && analysis.largo_plazo.score >= 0) score += 2;
+    
+    // Volumen
+    const vol = parseFloat(stock.volume) || 0;
+    const avgVol = parseFloat(stock.avgVolume) || 1;
+    if ((vol / avgVol) > 1.2) score += 1;
+    
+    // Alineación Timeframes
+    if (analysis.corto_plazo && analysis.corto_plazo.score > 0 && 
+        analysis.largo_plazo && analysis.largo_plazo.score > 0) score += 1;
+
+    // AI Boost Predict (Solo confirmación, nunca trigger primario)
+    if (aiData && aiData.usable) {
+        if (aiData.probability > 0.6) score += 1;
+        if ((aiData.strength * 100) > 60) score += 1;
+    }
+
+    return Math.max(0, Math.min(12, score));
+}
+
+function validateEntry(analysis) {
+    // Filtro estricto Multi-Timeframe
+    if (analysis.largo_plazo.score < 6 || analysis.corto_plazo.score < 5) {
+        return { valid: false, reason: "CONFLICTO DE TIMEFRAME" };
+    }
+    return { valid: true };
+}
+
+function executeTrade(stock, analysis, executionScore, reasonStr) {
+    // Control de Exposición (Máximo 5 operaciones activas)
+    const MAX_POSITIONS = 5;
+    if (window.autoPortfolio.length >= MAX_POSITIONS) return false;
+
+    // Position Sizing Dinámico (2% del capital)
+    const RISK_PER_TRADE = 0.02;
+    const tradeAmount = window.simCapital * RISK_PER_TRADE;
+    const qty = tradeAmount / stock.price;
+
+    window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
+    
+    window.autoPortfolio.push({
+        symbol: stock.symbol,
+        price: parseFloat(stock.price),
+        highestPrice: parseFloat(stock.price),
+        qty: qty,
+        takenProfit: false,
+        executionScore: executionScore,
+        entryReason: reasonStr,
+        marketCondition: analysis.contexto_mercado
+    });
+    return true;
+}
+
+function manageOpenPositions(stock, analysis, prevSignal) {
+    const autoPosIndex = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
+    if (autoPosIndex === -1) return false;
+    
+    const autoPos = window.autoPortfolio[autoPosIndex];
+    let sold = false;
+    let partialSale = false;
+    let sellReason = '';
+
+    const currentPrice = parseFloat(stock.price);
+    
+    // Tracker: Trailing Stop progresivo (5%)
+    if (currentPrice > autoPos.highestPrice) {
+        autoPos.highestPrice = currentPrice;
+    }
+    const trailingStopPct = 0.05;
+    const trailingStopPrice = autoPos.highestPrice * (1 - trailingStopPct);
+
+    // Salida por debilidad analítica general (< 4 score)
+    if (analysis.score < 4) {
+        sold = true;
+        sellReason = `Debilidad detectada (Score general: ${analysis.score})`;
+    } 
+    // Salida por Trailing Stop Real (Dinámico de 5%)
+    else if (currentPrice < trailingStopPrice) {
+        sold = true;
+        sellReason = `Trailing Stop (5%) ejecutado. Pico histórico: $${autoPos.highestPrice.toFixed(2)}`;
+    } 
+    // Salidas por transiciones a Venta del Core Engine
+    else if ((analysis.signal.includes('VENTA') || analysis.signal.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
+        sold = true;
+        sellReason = `Señal técnica de ${analysis.signal}`;
+    } 
+    // Venta Seguridad Máxima (Hard Stop estático)
+    else if (analysis.actionFlag === 'STOP_LOSS') {
+        sold = true;
+        sellReason = "Stop Loss de seguridad portafolio";
+    } 
+    // FASE 6 - Take Profit (Salida Parcial)
+    else if (analysis.actionFlag === 'TAKE_PROFIT') {
+        if (!autoPos.takenProfit) {
+            autoPos.qty = autoPos.qty / 2; // Cierra 50%
+            autoPos.takenProfit = true;
+            window.addNotification(`🤖 Auto-Trade: TAKE PROFIT PARCIAL (50%) en ${stock.symbol}`, 'sell', stock.symbol);
+            partialSale = true;
+        }
+    }
+
+    if (sold) {
+        if (window.autoTradingEnabled) {
+            window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} - ${sellReason}`, 'sell', stock.symbol);
+            window.removeFromAutoPortfolio(autoPosIndex, sellReason, analysis.contexto_mercado);
+        }
+        return true; 
+    }
+    
+    // Si modificamos tamaño (Take Profit) o actualizamos highestPrice, regresamos true
+    // para indicar que ocurrió un cambio que necesita persistir en localStorage.
+    if (partialSale || currentPrice === autoPos.highestPrice) {
+        return true;
+    }
+    
+    return false;
+}
+// ------------------------------
+
 function checkNotifications() {
     const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
     const marketCondition = getMarketCondition(vix);
@@ -265,28 +405,9 @@ function checkNotifications() {
         } 
         
         if (autoPos) {
-            // Evaluamos ventas para el Bot
-            if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
-                if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} por señal de ${sig}`, 'sell', stock.symbol);
-                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
-                }
-            }
-            if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
-                if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: STOP LOSS Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
-                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
-                }
-            }
-            if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
-                if (window.autoTradingEnabled) {
-                    window.addNotification(`🤖 Auto-Trade: TAKE PROFIT Ejecutado en ${stock.symbol}`, 'sell', stock.symbol);
-                    const idx = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
-                    if (idx !== -1) window.removeFromAutoPortfolio(idx);
-                }
-            }
+            // Delega la gestión de salidas (Ventas y Trailing Stops) a FASE 5, 6
+            const stateModified = manageOpenPositions(stock, analysis, prevSignal);
+            if (stateModified) hasBotChanges = true;
         }
         
         // 2. Accion (no en portfolio) da de compra confirmada
@@ -302,27 +423,26 @@ function checkNotifications() {
                 }
             }
 
-            // Lógica del Bot (No requiere transición, toma las oportunidades activas que sean muy sólidas)
-            const isFuerte = sig === 'COMPRA FUERTE';
-            const isIA = analysis.confirmationLevel === 'ALTA CONFIANZA';
-            const isSetup = !!analysis.setupDetected;
-            const isCompraBasica = sig.includes('COMPRA');
-
-            if (window.autoTradingEnabled && (isFuerte || isIA || (isSetup && isCompraBasica))) {
-                const tradeAmount = 1000; // Invertir 1000 por señal
-                const qty = tradeAmount / stock.price;
-                let reasonStr = 'Técnico Fuerte';
-                if (isIA) reasonStr = 'Confirmado IA';
-                else if (isSetup && !isFuerte) reasonStr = `Setup: ${analysis.setupDetected}`;
+            // Lógica del Bot Motor Cuantitativo (FASE 1 a 4)
+            if (window.autoTradingEnabled) {
+                const execScore = calculateExecutionScore(stock, analysis);
                 
-                window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por $${tradeAmount} (${reasonStr})`, 'buy', stock.symbol);
-                window.autoPortfolio.push({
-                    symbol: stock.symbol,
-                    price: parseFloat(stock.price),
-                    highestPrice: parseFloat(stock.price),
-                    qty: qty
-                });
-                hasBotChanges = true;
+                // Condición de entrada principal: Score de ejecución válido >= 7
+                if (execScore >= 7) {
+                    const validation = validateEntry(analysis);
+                    
+                    if (validation.valid) {
+                        let reasonStr = `Score: ${execScore}`;
+                        if (analysis.setupDetected) reasonStr += ` | Setup: ${analysis.setupDetected}`;
+                        
+                        // FASE 3, 4 y 9 - Ejecución modular y control
+                        const tradeExecuted = executeTrade(stock, analysis, execScore, reasonStr);
+                        if (tradeExecuted) hasBotChanges = true;
+                    } else {
+                        // FASE 2: Conflicto TimeFrame. No notificamos para evitar spam, pero 
+                        // se podría loguear si es requerido de forma invisible.
+                    }
+                }
             }
         }
         
