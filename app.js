@@ -90,12 +90,14 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
 
     window.autoPortfolio.splice(index, 1);
     localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    if (window.cloudSynced) window.syncDataToFirebase();
     if (currentTerm === 'bot_portfolio') renderPortfolio(true);
 };
 
 window.toggleAutoTrading = () => {
     window.autoTradingEnabled = !window.autoTradingEnabled;
     localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
+    if (window.cloudSynced) window.syncDataToFirebase();
     window.updateAutoTradeUI();
     
     if (window.autoTradingEnabled) {
@@ -472,6 +474,7 @@ function checkNotifications() {
     
     if (hasBotChanges) {
         localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+        if (window.cloudSynced) window.syncDataToFirebase();
     }
 }
 // ---------------------------------
@@ -1015,8 +1018,20 @@ function renderPortfolio(isBot = false) {
         const pl = currentVal - inv;
         const plPct = inv > 0 ? (pl / inv) * 100 : 0;
 
-        totalInvestment += inv;
-        totalValue += currentVal;
+        const isArg = pos.symbol.endsWith('.BA');
+        const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
+        const curStr = isArg ? 'AR$' : 'U$D';
+
+        // Normalizar montos al Dólar CCL o USD oficial para los totales generales
+        let usdInv = inv;
+        let usdCurrentVal = currentVal;
+        if (isArg && ccl > 0) {
+            usdInv = inv / ccl;
+            usdCurrentVal = currentVal / ccl;
+        }
+
+        totalInvestment += usdInv;
+        totalValue += usdCurrentVal;
 
         const colorClass = pl >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
         const sign = pl >= 0 ? '+' : '';
@@ -1044,7 +1059,13 @@ function renderPortfolio(isBot = false) {
             signalBadge = `<div style="text-align:center;"><span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>${actionBadgeHtml}</div>`;
         }
 
-        const isArg = pos.symbol.endsWith('.BA');
+        let botTrackingHtml = '';
+        if (isBot) {
+            const reason = pos.entryReason ? pos.entryReason : 'Motor Cuantitativo';
+            const trailingLevel = pos.highestPrice ? (pos.highestPrice * 0.95).toFixed(2) : '--';
+            botTrackingHtml = `<br><span style="font-size:0.7rem; color:var(--text-secondary); display:block; margin-top:2px;">Razón: ${reason} <br> <span style="color:var(--accent-red)">Stop: ${curStr} ${trailingLevel}</span></span>`;
+        }
+
         const displaySymbol = isArg ? pos.symbol.replace('.BA', '') : pos.symbol;
         const flag = isArg ? ' 🇦🇷' : '';
         
@@ -1052,13 +1073,13 @@ function renderPortfolio(isBot = false) {
 
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
-                <td style="padding: 0.75rem; font-weight: bold; cursor: pointer; color: var(--accent-blue);" onclick="window.goToActivo('${pos.symbol}')" title="Ver análisis de ${displaySymbol}">${displaySymbol}${flag}</td>
+                <td style="padding: 0.75rem; cursor: pointer; color: var(--accent-blue);" onclick="window.goToActivo('${pos.symbol}')" title="Ver análisis de ${displaySymbol}"><b style="font-size:1.1em">${displaySymbol}${flag}</b>${botTrackingHtml}</td>
                 <td style="padding: 0.75rem;">${qty.toFixed(2)}</td>
-                <td style="padding: 0.75rem;">$${inv.toFixed(2)}</td>
-                <td style="padding: 0.75rem;">$${basePrice.toFixed(2)}</td>
-                <td style="padding: 0.75rem;">$${currentPrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">${curStr} ${inv.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">${curStr} ${basePrice.toFixed(2)}</td>
+                <td style="padding: 0.75rem;">${curStr} ${currentPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color: ${colorClass};">${sign}${plPct.toFixed(2)}%</td>
-                <td style="padding: 0.75rem; color: ${colorClass}; font-weight: bold;">${sign}$${pl.toFixed(2)}</td>
+                <td style="padding: 0.75rem; color: ${colorClass}; font-weight: bold;">${sign}${curStr} ${pl.toFixed(2)}</td>
                 <td style="padding: 0.75rem; vertical-align: middle;">${signalBadge}</td>
                 <td style="padding: 0.75rem;">${deleteBtnHtml}</td>
             </tr>
@@ -1070,6 +1091,7 @@ function renderPortfolio(isBot = false) {
     if (hasPortfolioChanges) {
         if (isBot) {
             localStorage.setItem('advisor_auto_portfolio', JSON.stringify(targetPortfolio));
+            if(window.cloudSynced) window.syncDataToFirebase();
         } else {
             localStorage.setItem('advisor_portfolio', JSON.stringify(targetPortfolio));
             if(window.cloudSynced) window.syncDataToFirebase();
@@ -1083,9 +1105,9 @@ function renderPortfolio(isBot = false) {
     const summarySign = totalPl >= 0 ? '+' : '';
 
     const summaryHtml = `        <div style="display:flex; justify-content: space-around; background: var(--card-bg); padding: 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 1rem; text-align: center;">
-            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Inversión Total</span><br><b style="font-size: 1.25rem;">$${totalInvestment.toFixed(2)}</b></div>
-            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Valor Actual</span><br><b style="font-size: 1.25rem;">$${totalValue.toFixed(2)}</b></div>
-            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Rendimiento Total</span><br><b style="color:${summaryColor}; font-size: 1.25rem;">${summarySign}$${totalPl.toFixed(2)} (${summarySign}${totalPlPct.toFixed(2)}%)</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Inversión Total (USD)</span><br><b style="font-size: 1.25rem;">U$D ${totalInvestment.toFixed(2)}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Valor Actual (USD)</span><br><b style="font-size: 1.25rem;">U$D ${totalValue.toFixed(2)}</b></div>
+            <div style="flex: 1;"><span style="color:var(--text-secondary); font-size:0.85rem; text-transform:uppercase;">Rendimiento Total (USD)</span><br><b style="color:${summaryColor}; font-size: 1.25rem;">${summarySign}U$D ${totalPl.toFixed(2)} (${summarySign}${totalPlPct.toFixed(2)}%)</b></div>
         </div>
         
         <!-- FASE 5: PIE CHART -->
@@ -1115,7 +1137,12 @@ function renderPortfolio(isBot = false) {
         const labels = targetPortfolio.map(p => p.symbol);
         const dataValues = targetPortfolio.map(p => {
             const st = globalStocksData.find(s => s.symbol === p.symbol);
-            return st ? (st.price * p.qty) : (p.price * p.qty);
+            const currentPrice = st ? st.price : p.price;
+            let val = currentPrice * p.qty;
+            const isArg = p.symbol.endsWith('.BA');
+            const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
+            if (isArg && ccl > 0) val = val / ccl;
+            return val;
         });
         
         window.portPieChart = new Chart(ctxPie, {
@@ -1342,6 +1369,22 @@ onAuthStateChanged(auth, async (user) => {
                     window.priceAlerts = d.priceAlerts;
                     localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
                 }
+                
+                // --- Sincronización del Bot de Trading ---
+                if (d.autoTradingEnabled !== undefined) {
+                    window.autoTradingEnabled = d.autoTradingEnabled;
+                    localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
+                    if(typeof window.updateAutoTradeUI === 'function') window.updateAutoTradeUI();
+                }
+                if (d.autoPortfolio) {
+                    window.autoPortfolio = d.autoPortfolio;
+                    localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+                }
+                if (d.autoClosedTrades) {
+                    window.autoClosedTrades = d.autoClosedTrades;
+                    localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+                }
+                
             }
         } catch(e) {
             console.error("Error cargando perfil nube", e);
@@ -1363,6 +1406,9 @@ window.syncDataToFirebase = async function() {
            portfolio: portfolio,
            watchlist: watchlist,
            priceAlerts: window.priceAlerts,
+           autoTradingEnabled: window.autoTradingEnabled,
+           autoPortfolio: window.autoPortfolio,
+           autoClosedTrades: window.autoClosedTrades,
            updatedAt: new Date().toISOString()
        }, { merge: true });
    } catch(e) {
