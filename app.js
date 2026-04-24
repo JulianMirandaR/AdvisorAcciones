@@ -285,9 +285,9 @@ function executeTrade(stock, analysis, executionScore, reasonStr) {
     const MAX_POSITIONS = 5;
     if (window.autoPortfolio.length >= MAX_POSITIONS) return false;
 
-    // Position Sizing Dinámico (2% del capital en USD de base)
-    const RISK_PER_TRADE = 0.02;
-    const usdTradeAmount = window.simCapital * RISK_PER_TRADE;
+    // Position Sizing (Asignación del 20% del capital por operación, para usar el 100% en 5 operaciones máx)
+    const POSITION_SIZE_PCT = 0.20;
+    const usdTradeAmount = window.simCapital * POSITION_SIZE_PCT;
     
     const isArg = stock.symbol.endsWith('.BA');
     const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
