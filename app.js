@@ -2221,6 +2221,8 @@ function renderHistorial(isBot = false) {
             <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
                 <th style="padding: 0.75rem;">Fecha</th>
                 <th style="padding: 0.75rem;">Activo</th>
+                <th style="padding: 0.75rem;">Cant.</th>
+                <th style="padding: 0.75rem;">Invertido</th>
                 <th style="padding: 0.75rem;">Entrada</th>
                 <th style="padding: 0.75rem;">Salida</th>
                 <th style="padding: 0.75rem;">P/L ($)</th>
@@ -2251,10 +2253,16 @@ function renderHistorial(isBot = false) {
         const color = trade.profit >= 0 ? "var(--accent-green)" : "var(--accent-red)";
         const sign = trade.profit >= 0 ? "+" : "";
 
+        const qtyStr = trade.qty ? parseFloat(trade.qty).toFixed(2) : '-';
+        const investedAmount = trade.qty ? (parseFloat(trade.qty) * parseFloat(trade.entryPrice)) : 0;
+        const invStr = investedAmount > 0 ? `${curStr} ${investedAmount.toFixed(2)}` : '-';
+
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color);">
                 <td style="padding: 0.75rem; color:var(--text-secondary);">${dateStr}</td>
                 <td style="padding: 0.75rem; font-weight: bold;">${trade.symbol}</td>
+                <td style="padding: 0.75rem; color:var(--text-secondary);">${qtyStr}</td>
+                <td style="padding: 0.75rem;">${invStr}</td>
                 <td style="padding: 0.75rem;">${curStr} ${trade.entryPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem;">${curStr} ${trade.exitPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}${curStr} ${trade.profit.toFixed(2)}</td>
