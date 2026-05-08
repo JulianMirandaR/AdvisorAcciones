@@ -62,18 +62,27 @@ window.cloudSynced = false;
 window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
 window.autoTradingEnabled = JSON.parse(localStorage.getItem('advisor_auto_trade') || 'false');
 window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '10000'); // Capital simulado base para auto-trading
-window.autoPortfolio = JSON.parse(localStorage.getItem('advisor_auto_portfolio') || '[]');
-window.autoClosedTrades = JSON.parse(localStorage.getItem('advisor_auto_closed_trades') || '[]');
+window.autoPortfolioLegacy = JSON.parse(localStorage.getItem('advisor_auto_portfolio_legacy') || '[]');
+window.autoClosedTradesLegacy = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_legacy') || '[]');
+window.autoPortfolioChatGPT = JSON.parse(localStorage.getItem('advisor_auto_portfolio_chatgpt') || '[]');
+window.autoClosedTradesChatGPT = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_chatgpt') || '[]');
 
-window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido") => {
-    const pos = window.autoPortfolio[index];
+window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
+    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
+    const historyArr = botType === 'legacy' ? window.autoClosedTradesLegacy : window.autoClosedTradesChatGPT;
+    const storageKeyPortfolio = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
+    const storageKeyHistory = botType === 'legacy' ? 'advisor_auto_closed_trades_legacy' : 'advisor_auto_closed_trades_chatgpt';
+
+    const pos = portfolioArr[index];
+    if (!pos) return;
+    
     const stockData = globalStocksData.find(s => s.symbol === pos.symbol);
     if (stockData) {
         const currentPrice = parseFloat(stockData.price);
         const profit = (currentPrice - pos.price) * pos.qty;
         const profitPct = ((currentPrice - pos.price) / pos.price) * 100;
         
-        window.autoClosedTrades.push({
+        historyArr.push({
             symbol: pos.symbol,
             entryPrice: pos.price,
             exitPrice: currentPrice,
@@ -86,26 +95,28 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
             executionScore: pos.executionScore || null,
             marketCondition: currentMarketCondition
         });
-        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+        localStorage.setItem(storageKeyHistory, JSON.stringify(historyArr));
 
-        // Enviar feedback a OpenAI backend para mejorar análisis futuros
-        fetch('/api/feedback', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                symbol: pos.symbol,
-                action: profitPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
-                price: currentPrice,
-                profitPct: profitPct,
-                date: new Date().toISOString()
-            })
-        }).catch(err => console.error("Error enviando feedback a AI:", err));
+        // Enviar feedback a OpenAI backend para mejorar análisis futuros (solo si es bot chatgpt o si queremos ambos)
+        if (botType === 'chatgpt') {
+            fetch('/api/feedback', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    symbol: pos.symbol,
+                    action: profitPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
+                    price: currentPrice,
+                    profitPct: profitPct,
+                    date: new Date().toISOString()
+                })
+            }).catch(err => console.error("Error enviando feedback a AI:", err));
+        }
     }
 
-    window.autoPortfolio.splice(index, 1);
-    localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    portfolioArr.splice(index, 1);
+    localStorage.setItem(storageKeyPortfolio, JSON.stringify(portfolioArr));
     if (window.cloudSynced) window.syncDataToFirebase();
-    if (currentTerm === 'bot_portfolio') renderPortfolio(true);
+    if (currentTerm === 'bot_legacy_portfolio' || currentTerm === 'bot_chatgpt_portfolio') renderPortfolio();
 };
 
 window.toggleAutoTrading = () => {
@@ -294,10 +305,13 @@ function validateEntry(analysis) {
     return { valid: true };
 }
 
-function executeTrade(stock, analysis, executionScore, reasonStr) {
+function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'chatgpt') {
+    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
+    const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
+
     // Control de Exposición (Máximo 5 operaciones activas)
     const MAX_POSITIONS = 5;
-    if (window.autoPortfolio.length >= MAX_POSITIONS) return false;
+    if (portfolioArr.length >= MAX_POSITIONS) return false;
 
     // Position Sizing (Asignación del 20% del capital por operación, para usar el 100% en 5 operaciones máx)
     const POSITION_SIZE_PCT = 0.20;
@@ -311,9 +325,10 @@ function executeTrade(stock, analysis, executionScore, reasonStr) {
     const qty = tradeAmountNominal / stock.price;
     
     const currStr = isArg ? 'AR$' : 'U$D';
-    window.addNotification(`🤖 Auto-Trade: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
+    const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
+    window.addNotification(`${botName}: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
     
-    window.autoPortfolio.push({
+    portfolioArr.push({
         symbol: stock.symbol,
         price: parseFloat(stock.price),
         highestPrice: parseFloat(stock.price),
@@ -323,14 +338,16 @@ function executeTrade(stock, analysis, executionScore, reasonStr) {
         entryReason: reasonStr,
         marketCondition: analysis.contexto_mercado
     });
+    localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
     return true;
 }
 
-function manageOpenPositions(stock, analysis, prevSignal) {
-    const autoPosIndex = window.autoPortfolio.findIndex(p => p.symbol === stock.symbol);
+function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
+    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
+    const autoPosIndex = portfolioArr.findIndex(p => p.symbol === stock.symbol);
     if (autoPosIndex === -1) return false;
     
-    const autoPos = window.autoPortfolio[autoPosIndex];
+    const autoPos = portfolioArr[autoPosIndex];
     let sold = false;
     let partialSale = false;
     let sellReason = '';
@@ -369,15 +386,17 @@ function manageOpenPositions(stock, analysis, prevSignal) {
         if (!autoPos.takenProfit) {
             autoPos.qty = autoPos.qty / 2; // Cierra 50%
             autoPos.takenProfit = true;
-            window.addNotification(`🤖 Auto-Trade: TAKE PROFIT PARCIAL (50%) en ${stock.symbol}`, 'sell', stock.symbol);
+            const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
+            window.addNotification(`${botName}: TAKE PROFIT PARCIAL (50%) en ${stock.symbol}`, 'sell', stock.symbol);
             partialSale = true;
         }
     }
 
     if (sold) {
         if (window.autoTradingEnabled) {
-            window.addNotification(`🤖 Auto-Trade: VENDIENDO ${stock.symbol} - ${sellReason}`, 'sell', stock.symbol);
-            window.removeFromAutoPortfolio(autoPosIndex, sellReason, analysis.contexto_mercado);
+            const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
+            window.addNotification(`${botName}: VENDIENDO ${stock.symbol} - ${sellReason}`, 'sell', stock.symbol);
+            window.removeFromAutoPortfolio(autoPosIndex, sellReason, analysis.contexto_mercado, botType);
         }
         return true; 
     }
@@ -385,6 +404,8 @@ function manageOpenPositions(stock, analysis, prevSignal) {
     // Si modificamos tamaño (Take Profit) o actualizamos highestPrice, regresamos true
     // para indicar que ocurrió un cambio que necesita persistir en localStorage.
     if (partialSale || currentPrice === autoPos.highestPrice) {
+        const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
+        localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
         return true;
     }
     
@@ -402,71 +423,86 @@ function checkNotifications() {
     globalStocksData.forEach(stock => {
         const portfolioPos = portfolio.find(p => p.symbol === stock.symbol);
         const portfolioInfo = portfolioPos ? { entryPrice: portfolioPos.price, highestPrice: portfolioPos.highestPrice } : null;
-        
-        // Auto bot info
-        const autoPos = window.autoPortfolio.find(p => p.symbol === stock.symbol);
-        
-        // Use default analysis logic
-        const analysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo);
-        const sig = analysis.signal;
-        const currentAction = analysis.actionFlag || sig;
         const prevSignal = window.lastKnownSignals[stock.symbol];
         
-        // 1. Accion comprada (en portfolio) da para venta
+        // 1. Análisis para el Usuario (Pestaña General)
+        const userAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo, 'auto');
+        const userSig = userAnalysis.signal;
+
         if (portfolioPos) {
-            // Signal cambió a venta?
-            if ((sig.includes('VENTA') || sig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
-                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${sig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
+            if ((userSig.includes('VENTA') || userSig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
+                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${userSig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
             }
-            // Stop Loss o Take Profit alert
-            if (analysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
+            if (userAnalysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
                 window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell', stock.symbol);
             }
-            if (analysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
+            if (userAnalysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
                 window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
             }
-        } 
-        
-        if (autoPos) {
-            // Delega la gestión de salidas (Ventas y Trailing Stops) a FASE 5, 6
-            const stateModified = manageOpenPositions(stock, analysis, prevSignal);
-            if (stateModified) hasBotChanges = true;
         }
-        
-        // 2. Accion (no en portfolio) da de compra confirmada
-        if (!portfolioPos && !autoPos) {
-            const isNewBuySignal = (sig === 'COMPRA' || sig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE';
 
-            // Alerta visual para el usuario (solo notifica en transiciones)
-            if (isNewBuySignal) {
-                if (analysis.confirmationLevel === 'ALTA CONFIANZA') {
-                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig} (Confirmada con IA).`, 'buy', stock.symbol);
-                } else {
-                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${sig}.`, 'buy', stock.symbol);
-                }
-            }
-
-            // Lógica del Bot Motor Cuantitativo (FASE 1 a 4)
-            if (window.autoTradingEnabled) {
-                const execScore = calculateExecutionScore(stock, analysis);
-                
-                // Condición de entrada principal: Score de ejecución válido >= 7
-                if (execScore >= 7) {
-                    const validation = validateEntry(analysis);
-                    
-                    if (validation.valid) {
-                        let reasonStr = `Score: ${execScore}`;
-                        if (analysis.setupDetected) reasonStr += ` | Setup: ${analysis.setupDetected}`;
-                        
-                        // FASE 3, 4 y 9 - Ejecución modular y control
-                        const tradeExecuted = executeTrade(stock, analysis, execScore, reasonStr);
-                        if (tradeExecuted) hasBotChanges = true;
-                    } else {
-                        // FASE 2: Conflicto TimeFrame. No notificamos para evitar spam, pero 
-                        // se podría loguear si es requerido de forma invisible.
+        // 2. Lógica de Auto-Trading: BOT LEGACY (Criterio: Conservador, Solo Técnico + IA Local)
+        if (window.autoTradingEnabled) {
+            const autoPosLegacy = window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol);
+            const legacyAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosLegacy, 'legacy');
+            
+            if (autoPosLegacy) {
+                if (manageOpenPositions(stock, legacyAnalysis, prevSignal, 'legacy')) hasBotChanges = true;
+            } else if (!portfolioPos) {
+                const legacyTechOk = validateEntry(legacyAnalysis);
+                if (legacyTechOk.valid) {
+                    const aiData = (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[stock.symbol]) ? window.aiPredictionCacheLegacy[stock.symbol] : null;
+                    if (aiData && aiData.usable && aiData.probability > 0.65) { // Más conservador (0.65)
+                        const execScore = calculateExecutionScore(stock, legacyAnalysis, aiData);
+                        if (execScore >= 9) { // Requiere score de 9 para Legacy
+                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy (Conservador)", 'legacy')) hasBotChanges = true;
+                        }
                     }
                 }
             }
+
+            // 3. Lógica de Auto-Trading: BOT CHATGPT (Criterio: Agresivo, Basado en OpenAI)
+            const autoPosChatGPT = window.autoPortfolioChatGPT.find(p => p.symbol === stock.symbol);
+            const chatgptAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosChatGPT, 'openai');
+            
+            if (autoPosChatGPT) {
+                if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
+            } else if (!portfolioPos && !autoPosLegacy) {
+                const chatgptTechOk = validateEntry(chatgptAnalysis);
+                if (chatgptTechOk.valid) {
+                    const aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[stock.symbol]) ? window.aiPredictionCacheOpenAI[stock.symbol] : null;
+                    
+                    if (aiData && aiData.usable && aiData.probability > 0.55) { // Más agresivo (0.55)
+                        const execScore = calculateExecutionScore(stock, chatgptAnalysis, aiData);
+                        if (execScore >= 7) { // Score de 7 para ChatGPT
+                            if (executeTrade(stock, chatgptAnalysis, execScore, "Setup Técnico + OpenAI (Agresivo)", 'chatgpt')) hasBotChanges = true;
+                        }
+                    } else if (!aiData && chatgptAnalysis.score >= 8) {
+                        // Si no hay datos de IA pero el técnico es MUY bueno, el bot solicita análisis automáticamente
+                        if (window.requestAIAnalysisHeadless) {
+                            window.requestAIAnalysisHeadless(stock.symbol);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Alertas visuales para el usuario
+        if (!portfolioPos) {
+            const isNewBuySignal = (userSig === 'COMPRA' || userSig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE';
+            if (isNewBuySignal) {
+                if (userAnalysis.confirmationLevel === 'ALTA CONFIANZA') {
+                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${userSig} (Confirmada con IA).`, 'buy', stock.symbol);
+                } else {
+                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${userSig}.`, 'buy', stock.symbol);
+                }
+            }
+        }
+
+        // Guardar última señal conocida
+        if (userSig !== prevSignal) {
+            window.lastKnownSignals[stock.symbol] = userSig;
+            hasChanges = true;
         }
         
         // 3. Revisar Alertas de Precio Personalizadas
@@ -481,8 +517,8 @@ function checkNotifications() {
             }
         });
         
-        if (window.lastKnownSignals[stock.symbol] !== currentAction) {
-            window.lastKnownSignals[stock.symbol] = currentAction;
+        if (window.lastKnownSignals[stock.symbol] !== userSig) {
+            window.lastKnownSignals[stock.symbol] = userSig;
             hasChanges = true;
         }
     });
@@ -494,8 +530,10 @@ function checkNotifications() {
     }
     
     if (hasBotChanges) {
-        localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
         if (window.cloudSynced) window.syncDataToFirebase();
+        if (currentTerm === 'bot_legacy_portfolio' || currentTerm === 'bot_chatgpt_portfolio') {
+            renderPortfolio(currentTerm === 'bot_legacy_portfolio' ? 'legacy' : 'chatgpt');
+        }
     }
 }
 // ---------------------------------
@@ -640,7 +678,7 @@ function refreshUI() {
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
         
-        renderPortfolio(false);
+        renderPortfolio('user');
         return;
     } else if (currentTerm === 'historial') {
         container.style.display = 'none';
@@ -648,15 +686,23 @@ function refreshUI() {
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
         
-        renderHistorial(false);
+        renderHistorial('user');
         return;
-    } else if (currentTerm === 'bot_portfolio') {
+    } else if (currentTerm === 'bot_legacy_portfolio') {
         container.style.display = 'none';
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
         
-        renderPortfolio(true);
+        renderPortfolio('legacy');
+        return;
+    } else if (currentTerm === 'bot_chatgpt_portfolio') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
+        portfolioContainer.style.display = 'block';
+        if (historialContainer) historialContainer.style.display = 'none';
+        
+        renderPortfolio('chatgpt');
         return;
     } else if (currentTerm === 'bot_historial') {
         container.style.display = 'none';
@@ -664,7 +710,7 @@ function refreshUI() {
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
         
-        renderHistorial(true);
+        renderHistorial('bots');
         return;        
     } else {
         container.style.display = ''; 
@@ -935,43 +981,67 @@ window.toggleWatchlist = (symbol, event) => {
     refreshUI();
 };
 
-window.clearPortfolio = (isBot) => {
+window.clearPortfolio = (viewType = 'user') => {
     if(!confirm('¿Estás seguro que deseas vaciar este portafolio por completo? No podrás recuperarlo.')) return;
-    if (isBot) {
-        window.autoPortfolio = [];
-        localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    
+    if (viewType === 'legacy') {
+        window.autoPortfolioLegacy = [];
+        localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(window.autoPortfolioLegacy));
+    } else if (viewType === 'chatgpt') {
+        window.autoPortfolioChatGPT = [];
+        localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(window.autoPortfolioChatGPT));
     } else {
         portfolio = [];
         localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
     }
+    
     if (window.cloudSynced) window.syncDataToFirebase();
-    renderPortfolio(isBot);
+    renderPortfolio(viewType);
 };
 
-window.clearHistory = (isBot) => {
+window.clearHistory = (viewType = 'user') => {
     if(!confirm('¿Estás seguro que deseas vaciar el historial de operaciones por completo?')) return;
-    if (isBot) {
-        window.autoClosedTrades = [];
-        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+    
+    if (viewType === 'bots') {
+        window.autoClosedTradesLegacy = [];
+        window.autoClosedTradesChatGPT = [];
+        localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
+        localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
     } else {
         closedTrades = [];
         localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
     }
+    
     if (window.cloudSynced) window.syncDataToFirebase();
-    renderHistorial(isBot);
+    renderHistorial(viewType);
 };
 
-window.removeFromHistory = (index, isBot) => {
+window.removeFromHistory = (index, viewType = 'user') => {
     if (!confirm('¿Eliminar permanentemente este registro del historial?')) return;
-    if (isBot) {
-        window.autoClosedTrades.splice(index, 1);
-        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+    
+    if (viewType === 'bots') {
+        const combined = [...window.autoClosedTradesLegacy, ...window.autoClosedTradesChatGPT];
+        combined.sort((a, b) => new Date(b.date) - new Date(a.date));
+        const tradeToDelete = combined[index];
+        
+        const idxLegacy = window.autoClosedTradesLegacy.indexOf(tradeToDelete);
+        if (idxLegacy !== -1) {
+            window.autoClosedTradesLegacy.splice(idxLegacy, 1);
+            localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
+        } else {
+            const idxChat = window.autoClosedTradesChatGPT.indexOf(tradeToDelete);
+            if (idxChat !== -1) {
+                window.autoClosedTradesChatGPT.splice(idxChat, 1);
+                localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
+            }
+        }
     } else {
         closedTrades.splice(index, 1);
         localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
     }
+    
     if (window.cloudSynced) window.syncDataToFirebase();
-    renderHistorial(isBot);
+    renderHistorial(viewType);
 };
 
 window.removeFromPortfolio = (index) => {
@@ -1046,9 +1116,26 @@ window.confirmAddToPortfolio = () => {
     renderPortfolio();
 };
 
-function renderPortfolio(isBot = false) {
-    let targetPortfolio = isBot ? window.autoPortfolio : portfolio;
-    portfolioContainer.innerHTML = isBot ? '<h4>Portafolio Simulado (Bot Auto-Trading)</h4>' : '<h4>Mi Portafolio V1</h4>';
+function renderPortfolio(viewType = 'user') {
+    let targetPortfolio;
+    let title;
+    let emptyMsg;
+    
+    if (viewType === 'legacy') {
+        targetPortfolio = window.autoPortfolioLegacy;
+        title = '<h4>🤖 Portafolio Bot Legacy (TF.js)</h4>';
+        emptyMsg = 'El portafolio del bot Legacy está vacío.';
+    } else if (viewType === 'chatgpt') {
+        targetPortfolio = window.autoPortfolioChatGPT;
+        title = '<h4>🤖 Portafolio Bot ChatGPT (OpenAI)</h4>';
+        emptyMsg = 'El portafolio del bot ChatGPT está vacío.';
+    } else {
+        targetPortfolio = portfolio;
+        title = '<h4>💼 Mi Portafolio</h4>';
+        emptyMsg = 'Tu portafolio está vacío. Añade acciones desde la pestaña de Análisis.';
+    }
+
+    portfolioContainer.innerHTML = title;
 
     let totalValue = 0;
     let totalInvestment = 0;
@@ -1073,7 +1160,7 @@ function renderPortfolio(isBot = false) {
     `;
 
     if (targetPortfolio.length === 0) {
-        portfolioContainer.innerHTML += isBot ? '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio del bot está vacío. Encendelo y espera a que la IA encuentre oportunidades.</p>' : '<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">El portafolio está vacío. Añade acciones desde la lista principal clickeando en "+ Portafolio".</p>';
+        portfolioContainer.innerHTML += `<p style="text-align:center; padding: 2rem; color: var(--text-secondary);">${emptyMsg}</p>`;
         return;
     }
 
@@ -1120,7 +1207,10 @@ function renderPortfolio(isBot = false) {
         if (stockData) {
             const portfolioInfo = { entryPrice: basePrice, highestPrice: pos.highestPrice };
             const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
-            const analysis = analyzeStockWithMarketCondition(stockData, window.portfolioTerm, getMarketCondition(vix), portfolioInfo);
+            
+            // Preferencia de IA para el análisis en la tabla según el bot
+            const aiPref = viewType === 'legacy' ? 'legacy' : (viewType === 'chatgpt' ? 'openai' : 'auto');
+            const analysis = analyzeStockWithMarketCondition(stockData, window.portfolioTerm, getMarketCondition(vix), portfolioInfo, aiPref);
             const sig = analysis.signal;
 
             let bgClass = 'hold-badge';
@@ -1128,18 +1218,17 @@ function renderPortfolio(isBot = false) {
             if (sig.includes('VENTA') || sig.includes('VENDER')) bgClass = 'sell-badge';
 
             let actionBadgeHtml = '';
-            if (analysis.actionFlag === 'TRAILING_STOP') {
+            if (analysis.actionFlag === 'STOP_LOSS') {
                 actionBadgeHtml = `<br><span class="recommendation-badge" style="background:#ef4444; color:#fff; font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-top:4px;">STOP LOSS ACTIVO</span>`;
             } else if (analysis.actionFlag === 'TAKE_PROFIT') {
                 actionBadgeHtml = `<br><span class="recommendation-badge" style="background:#eab308; color:#000; font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-top:4px;">TAKE PROFIT</span>`;
             }
 
-            // Re-using styles from your CSS but making it smaller
             signalBadge = `<div style="text-align:center;"><span class="recommendation-badge ${bgClass}" style="position: static; font-size: 0.7rem; padding: 0.2rem 0.4rem; white-space: nowrap;">${sig}</span>${actionBadgeHtml}</div>`;
         }
 
         let botTrackingHtml = '';
-        if (isBot) {
+        if (viewType !== 'user') {
             const reason = pos.entryReason ? pos.entryReason : 'Motor Cuantitativo';
             const trailingLevel = pos.highestPrice ? (pos.highestPrice * 0.95).toFixed(2) : '--';
             botTrackingHtml = `<br><span style="font-size:0.7rem; color:var(--text-secondary); display:block; margin-top:2px;">Razón: ${reason} <br> <span style="color:var(--accent-red)">Stop: ${curStr} ${trailingLevel}</span></span>`;
@@ -1148,7 +1237,9 @@ function renderPortfolio(isBot = false) {
         const displaySymbol = isArg ? pos.symbol.replace('.BA', '') : pos.symbol;
         const flag = isArg ? ' 🇦🇷' : '';
         
-        const deleteBtnHtml = isBot ? `<button onclick="removeFromAutoPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Forzar Venta">Vender</button>` : `<button onclick="removeFromPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Eliminar">🗑️</button>`;
+        const deleteBtnHtml = viewType !== 'user' 
+            ? `<button onclick="removeFromAutoPortfolio(${index}, 'Cierre Manual', 'BULL', '${viewType}')" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Forzar Venta">Vender</button>` 
+            : `<button onclick="removeFromPortfolio(${index})" style="background:var(--accent-red); color:white; border:none; padding: 0.2rem 0.6rem; border-radius:4px; cursor:pointer;" title="Eliminar">🗑️</button>`;
 
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(255,255,255,0.02)'" onmouseout="this.style.backgroundColor='transparent'">
@@ -1168,13 +1259,11 @@ function renderPortfolio(isBot = false) {
     tableHtml += `</tbody></table></div>`;
 
     if (hasPortfolioChanges) {
-        if (isBot) {
-            localStorage.setItem('advisor_auto_portfolio', JSON.stringify(targetPortfolio));
-            if(window.cloudSynced) window.syncDataToFirebase();
-        } else {
-            localStorage.setItem('advisor_portfolio', JSON.stringify(targetPortfolio));
-            if(window.cloudSynced) window.syncDataToFirebase();
-        }
+        if (viewType === 'legacy') localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(targetPortfolio));
+        else if (viewType === 'chatgpt') localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(targetPortfolio));
+        else localStorage.setItem('advisor_portfolio', JSON.stringify(targetPortfolio));
+        
+        if(window.cloudSynced) window.syncDataToFirebase();
     }
 
     // Summary
@@ -1200,7 +1289,7 @@ function renderPortfolio(isBot = false) {
     const toggleHtml = `
         <div style="margin-bottom: 1rem; display:flex; justify-content: space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
             <div>
-                <button onclick="window.clearPortfolio(${isBot})" style="background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Vaciar Portafolio</button>
+                <button onclick="window.clearPortfolio('${viewType}')" style="background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Vaciar Portafolio</button>
             </div>
             <div>
                 <span style="font-size: 0.85rem; color: var(--text-secondary); margin-right: 0.5rem;">Señal de Recomendación:</span>
@@ -1268,6 +1357,28 @@ function renderPortfolio(isBot = false) {
 window.updateAutoTradeUI();
 renderMarketStatus();
 initDashboard();
+
+// --- BUCLE DE REFRESCO AUTOMÁTICO (Cada 5 minutos) ---
+// Esto permite que el bot opere de forma autónoma si la pestaña queda abierta.
+setInterval(async () => {
+    console.log("🔄 Ejecutando ciclo de refresco automático...");
+    if (realDataService) {
+        // Recargamos datos de acciones. 
+        // handleStockUpdate (definido en initDashboard) llamará a checkNotifications() automáticamente.
+        await realDataService.loadStocks((updatedList) => {
+            globalStocksData = updatedList;
+            checkNotifications(); 
+            refreshUI();
+            renderMarketStatus();
+        }, (msg) => console.log("Auto-Refresh:", msg));
+        
+        // También actualizamos indicadores macro por si hubo cambios
+        await realDataService.loadMacroIndicator((macro) => {
+            globalMacroData = macro;
+            renderMarketStatus();
+        });
+    }
+}, 5 * 60 * 1000); 
 
 // Helper to keep track of chart instances and destroy them to avoid "Canvas is already in use" errors
 
@@ -1491,8 +1602,10 @@ window.syncDataToFirebase = async function() {
            watchlist: watchlist,
            priceAlerts: window.priceAlerts,
            autoTradingEnabled: window.autoTradingEnabled,
-           autoPortfolio: window.autoPortfolio,
-           autoClosedTrades: window.autoClosedTrades,
+           autoPortfolioLegacy: window.autoPortfolioLegacy,
+           autoClosedTradesLegacy: window.autoClosedTradesLegacy,
+           autoPortfolioChatGPT: window.autoPortfolioChatGPT,
+           autoClosedTradesChatGPT: window.autoClosedTradesChatGPT,
            updatedAt: new Date().toISOString()
        }, { merge: true });
    } catch(e) {
@@ -2213,13 +2326,25 @@ function renderNewMacroIndicators() {
 
 
 
-function renderHistorial(isBot = false) {
+function renderHistorial(viewType = 'user') {
     if (!historialContainer) return;
-    let targetTrades = isBot ? window.autoClosedTrades : closedTrades;
+    let targetTrades;
+    let title;
     
-    const clearBtn = targetTrades.length > 0 ? `<button onclick="window.clearHistory(${isBot})" style="float:right; background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Limpiar Historial</button>` : '';
+    if (viewType === 'bots') {
+        // Combinamos historiales para la vista general de bots
+        targetTrades = [...window.autoClosedTradesLegacy, ...window.autoClosedTradesChatGPT];
+        // Ordenar por fecha descendente
+        targetTrades.sort((a, b) => new Date(b.date) - new Date(a.date));
+        title = 'Historial de Operaciones de Bots';
+    } else {
+        targetTrades = closedTrades;
+        title = 'Historial de Operaciones Manuales';
+    }
+    
+    const clearBtn = targetTrades.length > 0 ? `<button onclick="window.clearHistory('${viewType}')" style="float:right; background:transparent; color:var(--text-secondary); border:1px solid var(--border-color); padding: 0.3rem 0.8rem; border-radius:4px; cursor:pointer; font-size:0.8rem; transition:0.2s;" onmouseover="this.style.color='var(--accent-red)'; this.style.borderColor='var(--accent-red)';" onmouseout="this.style.color='var(--text-secondary)'; this.style.borderColor='var(--border-color)';">🗑️ Limpiar Historial</button>` : '';
 
-    historialContainer.innerHTML = isBot ? `<h3 style="margin-bottom: 1rem;">Historial de Operaciones del Bot ${clearBtn}</h3>` : `<h3 style="margin-bottom: 1rem;">Historial de Operaciones Manuales ${clearBtn}</h3>`;
+    historialContainer.innerHTML = `<h3 style="margin-bottom: 1rem;">${title} ${clearBtn}</h3>`;
     
     if (targetTrades.length === 0) {
         historialContainer.innerHTML += '<p style="color:var(--text-secondary);">No hay operaciones cerradas registradas.</p>';
@@ -2282,7 +2407,7 @@ function renderHistorial(isBot = false) {
                 <td style="padding: 0.75rem;">${curStr} ${trade.exitPrice.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color}; font-weight:bold;">${sign}${curStr} ${trade.profit.toFixed(2)}</td>
                 <td style="padding: 0.75rem; color:${color};">${sign}${trade.profitPct.toFixed(2)}%</td>
-                <td style="padding: 0.75rem; text-align:right;"><button onclick="window.removeFromHistory(${trade.originalIndex}, ${isBot})" style="background:transparent; border:none; cursor:pointer; opacity:0.6; transition:0.2s;" onmouseover="this.style.opacity='1'; this.style.transform='scale(1.1)';" onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)';" title="Borrar Fila">❌</button></td>
+                <td style="padding: 0.75rem; text-align:right;"><button onclick="window.removeFromHistory(${trade.originalIndex}, '${viewType}')" style="background:transparent; border:none; cursor:pointer; opacity:0.6; transition:0.2s;" onmouseover="this.style.opacity='1'; this.style.transform='scale(1.1)';" onmouseout="this.style.opacity='0.6'; this.style.transform='scale(1)';" title="Borrar Fila">❌</button></td>
             </tr>
         `;
     });

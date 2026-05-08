@@ -242,7 +242,7 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     };
 }
 
-export function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'SIDEWAYS', portfolioInfo = null) {
+export function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'SIDEWAYS', portfolioInfo = null, aiPreference = 'auto') {
     const strategyMode = window.strategyMode || 'hybrid';
     
     const cp = analyzeTimeframe(data, false, marketCondition, strategyMode, portfolioInfo);
@@ -268,7 +268,18 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
     const priorProb = (cp.techProb * 0.6) + (lp.techProb * 0.4);
     
     // --- INTEGRACIÓN BAYESIANA IA CONFIDENCE ENGINE ---
-    const aiData = (window.aiPredictionCache && window.aiPredictionCache[data.symbol]) ? window.aiPredictionCache[data.symbol] : null;
+    let aiData = null;
+    if (aiPreference === 'openai') {
+        aiData = window.aiPredictionCacheOpenAI ? window.aiPredictionCacheOpenAI[data.symbol] : null;
+    } else if (aiPreference === 'legacy') {
+        aiData = window.aiPredictionCacheLegacy ? window.aiPredictionCacheLegacy[data.symbol] : null;
+    } else {
+        // 'auto' - Priorizamos OpenAI, luego Legacy
+        aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[data.symbol]) 
+            ? window.aiPredictionCacheOpenAI[data.symbol] 
+            : (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[data.symbol] ? window.aiPredictionCacheLegacy[data.symbol] : null);
+    }
+        
     const aiContext = analyzeAIPrediction(aiData);
     
     let posteriorProb = priorProb;

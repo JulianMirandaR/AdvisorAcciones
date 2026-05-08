@@ -1,7 +1,8 @@
 import { runAIPrediction } from './mlModel.js';
 
-// Inicializar caché de predicciones
-window.aiPredictionCache = window.aiPredictionCache || {};
+// Inicializar caches de predicciones por separado
+window.aiPredictionCacheLegacy = window.aiPredictionCacheLegacy || {};
+window.aiPredictionCacheOpenAI = window.aiPredictionCacheOpenAI || {};
 
 export async function handlePredictAILegacy(symbol, globalStocksData, callbackRefreshUI) {
     const stockData = globalStocksData.find(s => s.symbol === symbol);
@@ -10,7 +11,7 @@ export async function handlePredictAILegacy(symbol, globalStocksData, callbackRe
     const btn = document.getElementById(`btn-ai-${symbol}`);
     const originalText = btn.innerHTML;
 
-    if (window.aiPredictionCache[symbol]) {
+    if (window.aiPredictionCacheLegacy[symbol]) {
         callbackRefreshUI();
         return;
     }
@@ -44,8 +45,8 @@ export async function handlePredictAILegacy(symbol, globalStocksData, callbackRe
             uncertainty
         };
 
-        // Guardar en cache
-        window.aiPredictionCache[symbol] = result;
+        // Guardar en cache legacy
+        window.aiPredictionCacheLegacy[symbol] = result;
 
         // 🔥 Alert mejorado
         const popText = `🤖 IA PREDICT LEGACY (${symbol})
@@ -83,6 +84,10 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
     let originalText = '🧠 Análisis';
     if(btn) {
         originalText = btn.innerHTML;
+        if (window.aiPredictionCacheOpenAI[symbol]) {
+            callbackRefreshUI();
+            return;
+        }
         btn.innerHTML = '⚙️ Analizando...';
         btn.disabled = true;
     }
@@ -97,17 +102,21 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
         });
 
         if (!response.ok) {
+            if (response.status === 405 || response.status === 404) {
+                throw new Error("El servidor backend (Vercel API) no está corriendo. Si estás en local, usa 'vercel dev' en lugar de Live Server.");
+            }
             throw new Error(`Error HTTP: ${response.status}`);
         }
 
         const result = await response.json();
 
         // Adaptar al formato esperado por el frontend
-        window.aiPredictionCache[symbol] = {
+        window.aiPredictionCacheOpenAI[symbol] = {
             probability: result.probability,
             confidence: result.confidence,
             usable: true,
-            bias: result.bias
+            bias: result.bias,
+            thought: result.thought
         };
 
         const popText = `🤖 OPEN AI PREDICT (${symbol})
@@ -199,3 +208,44 @@ export function handleOpenNewsModal(symbol, globalStocksData) {
     container.innerHTML = htmlContent;
     document.getElementById('newsModal').style.display = 'flex';
 }
+
+// --- AUTO-BOT HEADLESS ANALYSIS ---
+window.pendingAnalyses = new Set();
+window.requestAIAnalysisHeadless = async function(symbol) {
+    if (window.pendingAnalyses.has(symbol)) return;
+    if (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[symbol]) return;
+    
+    const stockData = globalStocksData.find(s => s.symbol === symbol);
+    if (!stockData) return;
+    
+    window.pendingAnalyses.add(symbol);
+    console.log(`🤖 Bot solicitando análisis autónomo para ${symbol}...`);
+
+    try {
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, stockData })
+        });
+
+        if (!response.ok) return;
+
+        const result = await response.json();
+        if (!window.aiPredictionCacheOpenAI) window.aiPredictionCacheOpenAI = {};
+        
+        window.aiPredictionCacheOpenAI[symbol] = {
+            probability: result.probability,
+            confidence: result.confidence,
+            usable: true,
+            bias: result.bias,
+            thought: result.thought
+        };
+        
+        if (typeof callbackRefreshUI === 'function') callbackRefreshUI();
+        console.log(`✅ Análisis autónomo completado para ${symbol}`);
+    } catch (e) {
+        console.error("Headless OpenAI Error:", e);
+    } finally {
+        window.pendingAnalyses.delete(symbol);
+    }
+};
