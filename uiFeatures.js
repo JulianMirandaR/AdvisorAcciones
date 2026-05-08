@@ -3,7 +3,7 @@ import { runAIPrediction } from './mlModel.js';
 // Inicializar caché de predicciones
 window.aiPredictionCache = window.aiPredictionCache || {};
 
-export async function handlePredictAI(symbol, globalStocksData, callbackRefreshUI) {
+export async function handlePredictAILegacy(symbol, globalStocksData, callbackRefreshUI) {
     const stockData = globalStocksData.find(s => s.symbol === symbol);
     if (!stockData) return;
     
@@ -15,7 +15,7 @@ export async function handlePredictAI(symbol, globalStocksData, callbackRefreshU
         return;
     }
     
-    btn.innerHTML = '⚙️ Pensando...';
+    btn.innerHTML = '⚙️ Pensando (Legacy)...';
     btn.disabled = true;
     
     try {
@@ -48,7 +48,7 @@ export async function handlePredictAI(symbol, globalStocksData, callbackRefreshU
         window.aiPredictionCache[symbol] = result;
 
         // 🔥 Alert mejorado
-        const popText = `🤖 IA PREDICT (${symbol})
+        const popText = `🤖 IA PREDICT LEGACY (${symbol})
 ----------------------------------
 ${result.thought || 'Análisis basado en patrones históricos'}
 ----------------------------------
@@ -67,6 +67,64 @@ ${interpretAI(result)}
     } catch (e) {
         console.error("AI Error:", e);
         alert("Hubo un error calculando con IA: " + e.message);
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+}
+
+export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefreshUI) {
+    const stockData = globalStocksData.find(s => s.symbol === symbol);
+    if (!stockData) return;
+    
+    const btn = document.getElementById(`btn-ai-open-${symbol}`);
+    let originalText = '🧠 Análisis';
+    if(btn) {
+        originalText = btn.innerHTML;
+        btn.innerHTML = '⚙️ Analizando...';
+        btn.disabled = true;
+    }
+
+    try {
+        const response = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ symbol, stockData })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error HTTP: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        // Adaptar al formato esperado por el frontend
+        window.aiPredictionCache[symbol] = {
+            probability: result.probability,
+            confidence: result.confidence,
+            usable: true,
+            bias: result.bias
+        };
+
+        const popText = `🤖 OPEN AI PREDICT (${symbol})
+----------------------------------
+${result.thought || 'Análisis basado en el contexto de mercado'}
+----------------------------------
+📊 Probabilidad Alcista: ${(result.probability*100).toFixed(1)}%
+🎯 Confianza: ${result.confidence}/100
+Sesgo: ${result.bias}
+`;
+
+        alert(popText);
+        callbackRefreshUI();
+
+    } catch (e) {
+        console.error("OpenAI Error:", e);
+        alert("Hubo un error calculando con OpenAI: " + e.message);
     } finally {
         if (btn) {
             btn.innerHTML = originalText;

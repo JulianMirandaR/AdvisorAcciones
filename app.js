@@ -5,7 +5,7 @@ import { RealDataService, auth, db } from './realData.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
-import { handlePredictAI, handleOpenNewsModal } from './uiFeatures.js';
+import { handlePredictAILegacy, handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
 import { runWalkForwardBacktest } from './walkForwardEngine.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
@@ -19,7 +19,8 @@ window.setStrategyMode = (mode) => {
 };
 
 window.aiPredictionCache = {};
-window.predictAI = (symbol) => handlePredictAI(symbol, globalStocksData, refreshUI);
+window.predictAILegacy = (symbol) => handlePredictAILegacy(symbol, globalStocksData, refreshUI);
+window.predictOpenAI = (symbol) => handlePredictOpenAI(symbol, globalStocksData, refreshUI);
 window.openNewsModal = (symbol) => handleOpenNewsModal(symbol, globalStocksData);
 window.runWalkForwardBacktest = runWalkForwardBacktest;
 
@@ -86,6 +87,19 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
             marketCondition: currentMarketCondition
         });
         localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+
+        // Enviar feedback a OpenAI backend para mejorar análisis futuros
+        fetch('/api/feedback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: pos.symbol,
+                action: profitPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
+                price: currentPrice,
+                profitPct: profitPct,
+                date: new Date().toISOString()
+            })
+        }).catch(err => console.error("Error enviando feedback a AI:", err));
     }
 
     window.autoPortfolio.splice(index, 1);
@@ -810,7 +824,8 @@ function createCardHTML(item) {
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
-                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAI('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Predict'}</button>
+                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAILegacy('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Legacy'}</button>
+                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictOpenAI('${data.symbol}')"`} id="btn-ai-open-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#10a37f'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(16, 163, 127, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 OpenAI'}</button>
                 <button type="button" onclick="event.preventDefault(); window.openPriceAlert('${data.symbol}', ${data.price})" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">🔔 Alerta</button>
                 <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
             </div>
