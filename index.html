@@ -15,7 +15,7 @@
     <!-- TensorFlow.js Library para IA -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
     <!-- Technical Indicators Library for calculating SMA, RSI, MACD on the client side -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/technicalindicators/3.1.0/index.browser.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.1.0/dist/browser.js"></script>
 </head>
 
 <body>
@@ -63,6 +63,7 @@
                         <span style="font-size: 0.8rem; font-weight: bold; margin-right: 0.5rem; color: var(--text-primary);">Auto-Trading (Sim)</span>
                         <div id="autoTradeBtn" style="width: 12px; height: 12px; border-radius: 50%; background-color: var(--accent-red); box-shadow: 0 0 5px var(--accent-red);"></div>
                     </div>
+                    <button onclick="window.openBotSettings()" style="margin-left: 0.5rem; background: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.4rem; cursor: pointer; color: var(--text-secondary);" title="Configuración del Bot">⚙️</button>
                 </div>
 
                 <div class="controls-container">
@@ -160,23 +161,23 @@
                 
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; background: var(--hover-bg); padding: 1rem; border-radius: 8px;">
                     <div>
-                        <label style="font-size:0.8rem; color:var(--text-secondary);">Capital ($)</label><br>
+                        <label for="btCapital" style="font-size:0.8rem; color:var(--text-secondary);">Capital ($)</label><br>
                         <input type="number" id="btCapital" value="10000" style="padding:0.3rem; border-radius:4px; width:100px;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem; color:var(--text-secondary);">Stop Loss (%)</label><br>
+                        <label for="btSl" style="font-size:0.8rem; color:var(--text-secondary);">Stop Loss (%)</label><br>
                         <input type="number" id="btSl" value="5" style="padding:0.3rem; border-radius:4px; width:80px;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem; color:var(--text-secondary);">Take Profit (%)</label><br>
+                        <label for="btTp" style="font-size:0.8rem; color:var(--text-secondary);">Take Profit (%)</label><br>
                         <input type="number" id="btTp" value="15" style="padding:0.3rem; border-radius:4px; width:80px;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem; color:var(--text-secondary);">Trailing (%)</label><br>
+                        <label for="btTs" style="font-size:0.8rem; color:var(--text-secondary);">Trailing (%)</label><br>
                         <input type="number" id="btTs" value="3" style="padding:0.3rem; border-radius:4px; width:80px;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem; color:var(--text-secondary);">Estrategia</label><br>
+                        <label for="btTerm" style="font-size:0.8rem; color:var(--text-secondary);">Estrategia</label><br>
                         <select id="btTerm" style="padding:0.3rem; border-radius:4px;">
                             <option value="all">Híbrida (Máster)</option>
                             <option value="short">Swing (Corto P.)</option>
@@ -215,11 +216,11 @@
                 <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">Registra tu compra para <b id="addPortfolioSymbolText"></b>.</p>
                 <form id="addPortfolioForm" onsubmit="event.preventDefault(); window.confirmAddToPortfolio();">
                     <div style="text-align: left; margin-bottom: 1rem;">
-                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Precio de Compra</label>
+                        <label for="addPortfolioPrice" style="font-size: 0.8rem; color: var(--text-secondary);">Precio de Compra</label>
                         <input type="number" id="addPortfolioPrice" step="any" required style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
                     </div>
                     <div style="text-align: left; margin-bottom: 1.5rem;">
-                        <label style="font-size: 0.8rem; color: var(--text-secondary);">Cantidad de Acciones</label>
+                        <label for="addPortfolioQty" style="font-size: 0.8rem; color: var(--text-secondary);">Cantidad de Acciones</label>
                         <input type="number" id="addPortfolioQty" step="any" required value="10" style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
                     </div>
                     <button type="submit" style="background: var(--accent-blue); color: white; padding: 0.8rem 2rem; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">Añadir</button>
@@ -249,6 +250,27 @@
                 <div id="newsContainer" style="display: flex; flex-direction: column; gap: 1rem;">
                     <!-- News inyectadas acá -->
                 </div>
+            </div>
+        </div>
+
+        <!-- Bot Settings Modal -->
+        <div id="botSettingsModal" class="modal">
+            <div class="modal-content" style="max-width: 400px; text-align: center;">
+                <span style="float:right; font-size:2rem; cursor:pointer;" onclick="document.getElementById('botSettingsModal').style.display='none'">&times;</span>
+                <h3 style="margin-bottom: 1rem;">⚙️ Configuración del Bot</h3>
+                <p style="color: var(--text-secondary); font-size: 0.8rem; margin-bottom: 1.5rem;">Ajusta la frecuencia y el capital de inversión del auto-trading.</p>
+                
+                <div style="text-align: left; margin-bottom: 1rem;">
+                    <label for="botIntervalInput" style="font-size: 0.8rem; color: var(--text-secondary);">Frecuencia de Operación (Minutos)</label>
+                    <input type="number" id="botIntervalInput" min="1" step="1" value="5" style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
+                </div>
+                
+                <div style="text-align: left; margin-bottom: 1.5rem;">
+                    <label for="botCapitalInput" style="font-size: 0.8rem; color: var(--text-secondary);">Límite de Inversión Total (U$D)</label>
+                    <input type="number" id="botCapitalInput" min="100" step="100" value="10000" style="width: 100%; padding: 0.8rem; margin-top: 0.3rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--hover-bg); color: white;">
+                </div>
+                
+                <button onclick="window.saveBotSettings()" style="background: var(--accent-blue); color: white; padding: 0.8rem 2rem; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">Guardar Configuración</button>
             </div>
         </div>
 

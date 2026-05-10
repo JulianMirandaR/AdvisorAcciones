@@ -1,4 +1,4 @@
-import { runAIPrediction } from './mlModel.js';
+import { runAIPrediction } from './mlModel.js?v=2.6';
 
 // Inicializar caches de predicciones por separado
 window.aiPredictionCacheLegacy = window.aiPredictionCacheLegacy || {};
@@ -210,16 +210,31 @@ export function handleOpenNewsModal(symbol, globalStocksData) {
 }
 
 // --- AUTO-BOT HEADLESS ANALYSIS ---
-window.pendingAnalyses = new Set();
+window.pendingAnalysesOpenAI = new Set();
+window.pendingAnalysesLegacy = new Set();
+
 window.requestAIAnalysisHeadless = async function(symbol) {
-    if (window.pendingAnalyses.has(symbol)) return;
+    if (window.pendingAnalysesOpenAI.has(symbol)) {
+        console.log(`⏳ Análisis de ChatGPT para ${symbol} ya está en curso.`);
+        return;
+    }
     if (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[symbol]) return;
+
+    // No analizar acciones que el bot ChatGPT ya tiene en cartera
+    if (window.autoPortfolioChatGPT && window.autoPortfolioChatGPT.find(p => p.symbol === symbol)) {
+        console.log(`ℹ️ Bot ChatGPT: ${symbol} ya está en cartera, omitiendo análisis.`);
+        return;
+    }
     
-    const stockData = globalStocksData.find(s => s.symbol === symbol);
-    if (!stockData) return;
+    const stocks = window.globalStocksData || [];
+    const stockData = stocks.find(s => s.symbol === symbol);
+    if (!stockData) {
+        console.error(`❌ No se encontró data para ${symbol} en globalStocksData.`);
+        return;
+    }
     
-    window.pendingAnalyses.add(symbol);
-    console.log(`🤖 Bot solicitando análisis autónomo para ${symbol}...`);
+    window.pendingAnalysesOpenAI.add(symbol);
+    console.log(`🤖 Bot ChatGPT: Solicitando análisis autónomo para ${symbol}...`);
 
     try {
         const response = await fetch('/api/analyze', {
@@ -228,7 +243,14 @@ window.requestAIAnalysisHeadless = async function(symbol) {
             body: JSON.stringify({ symbol, stockData })
         });
 
-        if (!response.ok) return;
+        if (!response.ok) {
+            if (response.status === 405 || response.status === 404) {
+                console.error(`❌ Error 405/404: El servidor API no está disponible en este puerto (estás usando Live Server?). Usa el puerto de 'vercel dev' (ej. localhost:3000).`);
+            } else {
+                console.error(`❌ Error en API OpenAI para ${symbol}: ${response.status}`);
+            }
+            return;
+        }
 
         const result = await response.json();
         if (!window.aiPredictionCacheOpenAI) window.aiPredictionCacheOpenAI = {};
@@ -241,11 +263,74 @@ window.requestAIAnalysisHeadless = async function(symbol) {
             thought: result.thought
         };
         
-        if (typeof callbackRefreshUI === 'function') callbackRefreshUI();
-        console.log(`✅ Análisis autónomo completado para ${symbol}`);
+        console.log(`✅ Bot ChatGPT: Análisis autónomo completado para ${symbol}. Prob: ${result.probability}`);
+        if (typeof window.checkNotifications === 'function') window.checkNotifications(true);
+        if (typeof window.refreshUI === 'function') window.refreshUI();
     } catch (e) {
         console.error("Headless OpenAI Error:", e);
     } finally {
-        window.pendingAnalyses.delete(symbol);
+        window.pendingAnalysesOpenAI.delete(symbol);
+    }
+};
+
+window.requestAILegacyHeadless = async function(symbol) {
+    if (window.pendingAnalysesLegacy.has(symbol)) {
+        console.log(`⏳ Análisis de Legacy para ${symbol} ya está en curso.`);
+        return;
+    }
+    if (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[symbol]) return;
+
+    // No analizar acciones que el bot Legacy ya tiene en cartera
+    if (window.autoPortfolioLegacy && window.autoPortfolioLegacy.find(p => p.symbol === symbol)) {
+        console.log(`ℹ️ Bot Legacy: ${symbol} ya está en cartera, omitiendo análisis.`);
+        return;
+    }
+    
+    const stocks = window.globalStocksData || [];
+    const stockData = stocks.find(s => s.symbol === symbol);
+    if (!stockData) {
+        console.error(`❌ No se encontró data para ${symbol} en globalStocksData.`);
+        return;
+    }
+
+    // Validar que hay suficientes datos históricos antes de llamar al motor de IA
+    const MIN_DAYS = 85; // windowSize(20) + horizon(5) + 60
+    const prices = stockData.history && stockData.history.prices;
+    if (!prices || !Array.isArray(prices) || prices.length < MIN_DAYS) {
+        console.warn(`⚠️ Bot Legacy: ${symbol} tiene datos insuficientes para IA (${prices ? prices.length : 0} días, mínimo ${MIN_DAYS}). Omitiendo.`);
+        return;
+    }
+    
+    window.pendingAnalysesLegacy.add(symbol);
+    console.log(`🤖 Bot Legacy: Calculando análisis autónomo para ${symbol}...`);
+
+    try {
+        const runs = [];
+        for (let i = 0; i < 3; i++) {
+            const res = await runAIPrediction(stockData);
+            if (res.error) throw new Error(res.error);
+            runs.push(res);
+        }
+
+        const avgProb = runs.reduce((a,b)=>a+b.probability,0) / runs.length;
+        const avgConf = runs.reduce((a,b)=>a+b.confidence,0) / runs.length;
+        const variance = runs.reduce((a,b)=>a + Math.pow(b.probability - avgProb, 2), 0) / runs.length;
+        const uncertainty = Math.sqrt(variance);
+
+        window.aiPredictionCacheLegacy[symbol] = {
+            ...runs[0],
+            probability: avgProb,
+            confidence: avgConf,
+            uncertainty,
+            usable: true
+        };
+
+        console.log(`✅ Bot Legacy: Análisis autónomo completado para ${symbol}. Prob: ${avgProb}`);
+        if (typeof window.checkNotifications === 'function') window.checkNotifications(true);
+        if (typeof window.refreshUI === 'function') window.refreshUI();
+    } catch (e) {
+        console.error("Headless Legacy Error:", e);
+    } finally {
+        window.pendingAnalysesLegacy.delete(symbol);
     }
 };

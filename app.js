@@ -41,6 +41,7 @@ const realDataService = new RealDataService();
 // Global container state
 // Global container state
 let globalStocksData = []; // To keep track for re-sorting
+window.globalStocksData = globalStocksData; // Exponer globalmente para otros módulos (uiFeatures.js)
 let globalMacroData = null; // Macroeconomic data (Buffett Indicator)
 let globalCclHistory = null; // Historical CCL Data
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
@@ -66,6 +67,9 @@ window.autoPortfolioLegacy = JSON.parse(localStorage.getItem('advisor_auto_portf
 window.autoClosedTradesLegacy = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_legacy') || '[]');
 window.autoPortfolioChatGPT = JSON.parse(localStorage.getItem('advisor_auto_portfolio_chatgpt') || '[]');
 window.autoClosedTradesChatGPT = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_chatgpt') || '[]');
+window.botInterval = JSON.parse(localStorage.getItem('advisor_bot_interval') || '5'); // Minutos entre ejecuciones
+window.lastBotExecution = JSON.parse(localStorage.getItem('advisor_last_bot_execution') || '0'); // Timestamp última ejecución
+
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
     const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
@@ -126,13 +130,52 @@ window.toggleAutoTrading = () => {
     window.updateAutoTradeUI();
     
     if (window.autoTradingEnabled) {
-        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Invertirá automáticamente en señales de Compra Fuerte, Alta Confianza o Setups Estratégicos.", "info");
-        // Trigger a check immediately to see if there are pending signals
+        console.log("🤖 Auto-Trading ACTIVADO. Iniciando procesos...");
+        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Motores Legacy y ChatGPT iniciando escaneo de prioridad...", "info");
+        
+        // --- ESCANEO DE PRIORIDAD (Inicia compra inmediata si es posible) ---
         if (globalStocksData.length > 0) {
+            console.log(`🔍 Escaneando ${globalStocksData.length} activos en modo prioridad...`);
+            // 1. Notificar inicio de motores
+            setTimeout(() => {
+                window.addNotification("🤖 Motor Legacy: ACTIVADO (Estrategia Conservadora)", "info");
+            }, 500);
+            setTimeout(() => {
+                window.addNotification("🤖 Motor ChatGPT: ACTIVADO (Estrategia Agresiva)", "info");
+            }, 1000);
+
+            // 2. Ejecutar chequeo inicial (Forzamos ejecución inmediata al activar)
+            window.lastBotExecution = 0;
             checkNotifications();
+            
+            // 3. Forzar análisis de IA para los 3 mejores candidatos técnicos que no tengan IA aún
+            const candidates = globalStocksData
+                .map(s => {
+                    const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
+                    const analysis = analyzeStockWithMarketCondition(s, 'all', getMarketCondition(vix));
+                    return { symbol: s.symbol, score: analysis.score };
+                })
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 3);
+            
+            console.log("🚀 Mejores candidatos detectados para Priority Scan:", candidates);
+            
+            candidates.forEach((c, index) => {
+                setTimeout(() => {
+                    if (window.autoTradingEnabled) {
+                        console.log(`🚀 Priority Scan: Solicitando IA para ${c.symbol} (Score: ${c.score})`);
+                        if (window.requestAIAnalysisHeadless) window.requestAIAnalysisHeadless(c.symbol);
+                        if (window.requestAILegacyHeadless) window.requestAILegacyHeadless(c.symbol);
+                    }
+                }, 1500 + (index * 2000)); // Escalonar para no saturar
+            });
+
             refreshUI();
+        } else {
+            console.warn("⚠️ No hay datos de acciones (globalStocksData) para el escaneo de prioridad.");
         }
     } else {
+        console.log("🤖 Auto-Trading DESACTIVADO.");
         window.addNotification("🤖 Bot de Auto-Trading DESACTIVADO. Operaciones pausadas.", "info");
     }
 };
@@ -149,6 +192,45 @@ window.updateAutoTradeUI = () => {
         }
     }
 };
+
+window.openBotSettings = () => {
+    document.getElementById('botIntervalInput').value = window.botInterval;
+    document.getElementById('botCapitalInput').value = window.simCapital;
+    document.getElementById('botSettingsModal').style.display = 'flex';
+};
+
+window.saveBotSettings = () => {
+    const intervalVal = document.getElementById('botIntervalInput').value;
+    const capitalVal = document.getElementById('botCapitalInput').value;
+    
+    const interval = parseInt(intervalVal);
+    const capital = parseFloat(capitalVal);
+    
+    if (isNaN(interval) || interval < 1) {
+        alert("Frecuencia inválida (mínimo 1 minuto)");
+        return;
+    }
+    if (isNaN(capital) || capital < 100) {
+        alert("Capital inválido (mínimo 100 U$D)");
+        return;
+    }
+    
+    window.botInterval = interval;
+    window.simCapital = capital;
+    
+    localStorage.setItem('advisor_bot_interval', JSON.stringify(interval));
+    localStorage.setItem('advisor_sim_capital', JSON.stringify(capital));
+    
+    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}`, "info");
+    document.getElementById('botSettingsModal').style.display = 'none';
+    
+    if (window.cloudSynced) {
+        console.log("☁️ Sincronizando configuración con la nube...");
+        window.syncDataToFirebase();
+    }
+};
+
+
 
 window.toggleNotifications = () => {
     const dropdown = document.getElementById('notifDropdown');
@@ -294,52 +376,113 @@ function calculateExecutionScore(stock, analysis) {
         if ((aiData.strength * 100) > 60) score += 1;
     }
 
+    console.log(`📊 Score de Ejecución para ${stock.symbol}: ${score} (Señal: ${sig})`);
     return Math.max(0, Math.min(12, score));
 }
 
-function validateEntry(analysis) {
-    // Filtro estricto Multi-Timeframe
-    if (analysis.largo_plazo.score < 6 || analysis.corto_plazo.score < 5) {
+function validateEntry(analysis, symbol) {
+    // Filtro Multi-Timeframe (Modo Agresivo para asegurar operatividad)
+    if (analysis.largo_plazo.score < 2 || analysis.corto_plazo.score < 2) {
+        // console.log(`🔍 ${symbol}: Rechazado por validación técnica (LP: ${analysis.largo_plazo.score}, CP: ${analysis.corto_plazo.score})`);
         return { valid: false, reason: "CONFLICTO DE TIMEFRAME" };
     }
+    
+    // Evitar comprar en regímenes de alta volatilidad extrema (VIX > 35)
+    const vix = (globalMacroData && globalMacroData.vix) ? globalMacroData.vix : 20;
+    if (vix > 35) {
+        console.log(`⚠️ ${symbol}: Rechazado por volatilidad extrema (VIX: ${vix})`);
+        return { valid: false, reason: "VOLATILIDAD EXTREMA" };
+    }
+
     return { valid: true };
 }
 
 function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'chatgpt') {
-    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
-    const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
+    console.log(`[STAGE 1] Iniciando executeTrade para ${stock.symbol} (Bot: ${botType})`);
+    try {
+        const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
+        const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
 
-    // Control de Exposición (Máximo 5 operaciones activas)
-    const MAX_POSITIONS = 5;
-    if (portfolioArr.length >= MAX_POSITIONS) return false;
+        console.log(`[STAGE 2] Verificando límite de posiciones. Actuales: ${portfolioArr.length}`);
+        // Control de Exposición (Máximo 5 operaciones activas por bot)
+        const MAX_POSITIONS = 5;
+        if (portfolioArr.length >= MAX_POSITIONS) {
+            console.log(`🚫 Bot ${botType}: Límite de posiciones alcanzado (${MAX_POSITIONS})`);
+            return false;
+        }
 
-    // Position Sizing (Asignación del 20% del capital por operación, para usar el 100% en 5 operaciones máx)
-    const POSITION_SIZE_PCT = 0.20;
-    const usdTradeAmount = window.simCapital * POSITION_SIZE_PCT;
-    
-    const isArg = stock.symbol.endsWith('.BA');
-    const ccl = (globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
-    
-    // Si la acción se compra en pesos, adaptamos la magnitud del capital usando el tipo de cambio
-    const tradeAmountNominal = isArg ? (usdTradeAmount * ccl) : usdTradeAmount;
-    const qty = tradeAmountNominal / stock.price;
-    
-    const currStr = isArg ? 'AR$' : 'U$D';
-    const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
-    window.addNotification(`${botName}: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
-    
-    portfolioArr.push({
-        symbol: stock.symbol,
-        price: parseFloat(stock.price),
-        highestPrice: parseFloat(stock.price),
-        qty: qty,
-        takenProfit: false,
-        executionScore: executionScore,
-        entryReason: reasonStr,
-        marketCondition: analysis.contexto_mercado
-    });
-    localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
-    return true;
+        console.log(`[STAGE 3] Calculando tamaño de posición`);
+        // Position Sizing: 20% del capital total definido por el usuario
+        const POSITION_SIZE_PCT = 0.20;
+        if (!window.simCapital || isNaN(window.simCapital)) {
+            console.error(`❌ Error: window.simCapital no está definido o es inválido: ${window.simCapital}, usando fallback 10000`);
+            window.simCapital = 10000;
+        }
+        const usdTradeAmount = window.simCapital * POSITION_SIZE_PCT;
+        
+        const ccl = (typeof globalMacroData !== 'undefined' && globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
+
+        console.log(`[STAGE 4] Verificando capital disponible (Límite de Inversión) en USD`);
+        // Verificar si hay capital suficiente (Límite de Inversión normalizado a USD)
+        const investedLegacy = window.autoPortfolioLegacy.reduce((s, p) => {
+            const valNominal = p.price * p.qty;
+            const isArgPos = p.symbol && p.symbol.endsWith('.BA');
+            const valUSD = isArgPos ? (valNominal / ccl) : valNominal;
+            return s + (isNaN(valUSD) ? 0 : valUSD);
+        }, 0);
+        
+        const investedChatGPT = window.autoPortfolioChatGPT.reduce((s, p) => {
+            const valNominal = p.price * p.qty;
+            const isArgPos = p.symbol && p.symbol.endsWith('.BA');
+            const valUSD = isArgPos ? (valNominal / ccl) : valNominal;
+            return s + (isNaN(valUSD) ? 0 : valUSD);
+        }, 0);
+        
+        const invested = investedLegacy + investedChatGPT;
+        
+        console.log(`[STAGE 4b] Invested: U$D ${invested.toFixed(2)}, Required: U$D ${usdTradeAmount.toFixed(2)}, SimCapital: U$D ${window.simCapital}`);
+        if (invested + usdTradeAmount > window.simCapital) {
+            console.warn(`🛑 Bot ${botType}: Límite de inversión alcanzado. Requerido: ${usdTradeAmount.toFixed(2)}, Disponible: ${(window.simCapital - invested).toFixed(2)}`);
+            return false;
+        }
+
+        console.log(`[STAGE 5] Preparando datos de moneda y cantidad. 💸 Bot ${botType}: Iniciando compra de ${stock.symbol} por aprox. U$D ${usdTradeAmount.toFixed(2)}`);
+        const isArg = stock.symbol.endsWith('.BA');
+        
+        // Si la acción se compra en pesos, adaptamos la magnitud del capital usando el tipo de cambio
+        const tradeAmountNominal = isArg ? (usdTradeAmount * ccl) : usdTradeAmount;
+        
+        if (!stock.price || isNaN(stock.price) || stock.price <= 0) {
+            console.error(`❌ Error: Precio de la acción inválido: ${stock.price}`);
+            return false;
+        }
+        
+        const qty = tradeAmountNominal / stock.price;
+        
+        console.log(`[STAGE 6] Disparando notificación de compra`);
+        const currStr = isArg ? 'AR$' : 'U$D';
+        const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
+        window.addNotification(`${botName}: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
+        
+        console.log(`[STAGE 7] Añadiendo a portfolio y guardando en localStorage`);
+        portfolioArr.push({
+            symbol: stock.symbol,
+            price: parseFloat(stock.price),
+            highestPrice: parseFloat(stock.price),
+            qty: qty,
+            takenProfit: false,
+            executionScore: executionScore,
+            entryReason: reasonStr,
+            marketCondition: analysis.contexto_mercado || 'Desconocido'
+        });
+        
+        localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
+        console.log(`✅ [STAGE 8] Compra exitosa en Bot ${botType}. Portfolio actualizado.`);
+        return true;
+    } catch (error) {
+        console.error(`❌ Error crítico en executeTrade para ${stock.symbol} (Bot ${botType}):`, error);
+        return false;
+    }
 }
 
 function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
@@ -413,7 +556,28 @@ function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
 }
 // ------------------------------
 
-function checkNotifications() {
+window.checkNotifications = checkNotifications;
+function checkNotifications(force = false) {
+    let shouldBotTrade = force;
+    // Si el auto-trading está activo, verificar frecuencia
+    if (window.autoTradingEnabled && !shouldBotTrade) {
+        const now = Date.now();
+        const elapsed = now - window.lastBotExecution;
+        const required = window.botInterval * 60 * 1000;
+        
+        if (elapsed < required) {
+            const remaining = Math.ceil((required - elapsed) / 1000 / 60);
+            console.log(`🤖 Bot en espera. Próximo chequeo en ${remaining} minutos.`);
+        } else {
+            console.log("🤖 Ejecutando ciclo de Auto-Trading...");
+            shouldBotTrade = true;
+            window.lastBotExecution = now;
+            localStorage.setItem('advisor_last_bot_execution', JSON.stringify(now));
+        }
+    } else if (window.autoTradingEnabled && force) {
+        console.log("🤖 Procesando resultado de análisis autónomo...");
+    }
+
     const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
     const marketCondition = getMarketCondition(vix);
     
@@ -448,14 +612,19 @@ function checkNotifications() {
             
             if (autoPosLegacy) {
                 if (manageOpenPositions(stock, legacyAnalysis, prevSignal, 'legacy')) hasBotChanges = true;
-            } else if (!portfolioPos) {
-                const legacyTechOk = validateEntry(legacyAnalysis);
+            } else if (!portfolioPos && shouldBotTrade) {
+                const legacyTechOk = validateEntry(legacyAnalysis, stock.symbol);
                 if (legacyTechOk.valid) {
                     const aiData = (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[stock.symbol]) ? window.aiPredictionCacheLegacy[stock.symbol] : null;
-                    if (aiData && aiData.usable && aiData.probability > 0.65) { // Más conservador (0.65)
+                    if (aiData && aiData.usable && aiData.probability > 0.60) { 
                         const execScore = calculateExecutionScore(stock, legacyAnalysis, aiData);
-                        if (execScore >= 9) { // Requiere score de 9 para Legacy
-                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy (Conservador)", 'legacy')) hasBotChanges = true;
+                        if (execScore >= 7) { 
+                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy (Agresivo)", 'legacy')) hasBotChanges = true;
+                        }
+                    } else if (!aiData && legacyAnalysis.score >= 7) {
+                        console.log(`🤖 Bot Legacy: ${stock.symbol} tiene buen puntaje técnico (${legacyAnalysis.score}), solicitando IA...`);
+                        if (window.requestAILegacyHeadless) {
+                            window.requestAILegacyHeadless(stock.symbol);
                         }
                     }
                 }
@@ -467,18 +636,18 @@ function checkNotifications() {
             
             if (autoPosChatGPT) {
                 if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
-            } else if (!portfolioPos && !autoPosLegacy) {
-                const chatgptTechOk = validateEntry(chatgptAnalysis);
+            } else if (!portfolioPos && !autoPosLegacy && shouldBotTrade) {
+                const chatgptTechOk = validateEntry(chatgptAnalysis, stock.symbol);
                 if (chatgptTechOk.valid) {
                     const aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[stock.symbol]) ? window.aiPredictionCacheOpenAI[stock.symbol] : null;
                     
-                    if (aiData && aiData.usable && aiData.probability > 0.55) { // Más agresivo (0.55)
+                    if (aiData && aiData.usable && aiData.probability > 0.50) { 
                         const execScore = calculateExecutionScore(stock, chatgptAnalysis, aiData);
-                        if (execScore >= 7) { // Score de 7 para ChatGPT
+                        if (execScore >= 5) { 
                             if (executeTrade(stock, chatgptAnalysis, execScore, "Setup Técnico + OpenAI (Agresivo)", 'chatgpt')) hasBotChanges = true;
                         }
-                    } else if (!aiData && chatgptAnalysis.score >= 8) {
-                        // Si no hay datos de IA pero el técnico es MUY bueno, el bot solicita análisis automáticamente
+                    } else if (!aiData && chatgptAnalysis.score >= 6) {
+                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} tiene buen puntaje técnico (${chatgptAnalysis.score}), solicitando IA...`);
                         if (window.requestAIAnalysisHeadless) {
                             window.requestAIAnalysisHeadless(stock.symbol);
                         }
@@ -578,7 +747,8 @@ async function initDashboard() {
     const progressEl = document.getElementById('loading-progress');
 
     const handleStockUpdate = (updatedList) => {
-        globalStocksData = updatedList; // Update global list reference
+        globalStocksData = updatedList; 
+        window.globalStocksData = updatedList; // Mantener sincronizado para otros módulos
         checkNotifications(); // Verificar nuevas oportunidades y cambios de tendencia
         refreshUI(); // Re-render sorted list
         renderMarketStatus(); // Actualizar contador de API
@@ -1560,24 +1730,34 @@ onAuthStateChanged(auth, async (user) => {
                     watchlist = d.watchlist;
                     localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
                 }
-                if (d.priceAlerts) {
-                    window.priceAlerts = d.priceAlerts;
-                    localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
+                if (d.simCapital) {
+                    window.simCapital = d.simCapital;
+                    localStorage.setItem('advisor_sim_capital', JSON.stringify(window.simCapital));
                 }
-                
-                // --- Sincronización del Bot de Trading ---
+                if (d.botInterval) {
+                    window.botInterval = d.botInterval;
+                    localStorage.setItem('advisor_bot_interval', JSON.stringify(window.botInterval));
+                }
                 if (d.autoTradingEnabled !== undefined) {
                     window.autoTradingEnabled = d.autoTradingEnabled;
                     localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
                     if(typeof window.updateAutoTradeUI === 'function') window.updateAutoTradeUI();
                 }
-                if (d.autoPortfolio) {
-                    window.autoPortfolio = d.autoPortfolio;
-                    localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+                if (d.autoPortfolioLegacy) {
+                    window.autoPortfolioLegacy = d.autoPortfolioLegacy;
+                    localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(window.autoPortfolioLegacy));
                 }
-                if (d.autoClosedTrades) {
-                    window.autoClosedTrades = d.autoClosedTrades;
-                    localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
+                if (d.autoClosedTradesLegacy) {
+                    window.autoClosedTradesLegacy = d.autoClosedTradesLegacy;
+                    localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
+                }
+                if (d.autoPortfolioChatGPT) {
+                    window.autoPortfolioChatGPT = d.autoPortfolioChatGPT;
+                    localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(window.autoPortfolioChatGPT));
+                }
+                if (d.autoClosedTradesChatGPT) {
+                    window.autoClosedTradesChatGPT = d.autoClosedTradesChatGPT;
+                    localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
                 }
                 
             }
@@ -1602,6 +1782,8 @@ window.syncDataToFirebase = async function() {
            watchlist: watchlist,
            priceAlerts: window.priceAlerts,
            autoTradingEnabled: window.autoTradingEnabled,
+           simCapital: window.simCapital,
+           botInterval: window.botInterval,
            autoPortfolioLegacy: window.autoPortfolioLegacy,
            autoClosedTradesLegacy: window.autoClosedTradesLegacy,
            autoPortfolioChatGPT: window.autoPortfolioChatGPT,
