@@ -7,15 +7,15 @@ y mejoras en la gestión de riesgos (Stop Loss, Take Profit, Trailing Stop).
 
 // --- 1. Variables de Estado Global del Bot ---
 // (Definidas al inicio de app.js)
-window.autoTradingEnabled = JSON.parse(localStorage.getItem('advisor_auto_trade') || 'false');
-window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '10000'); 
-window.autoPortfolio = JSON.parse(localStorage.getItem('advisor_auto_portfolio') || '[]');
-window.autoClosedTrades = JSON.parse(localStorage.getItem('advisor_auto_closed_trades') || '[]');
+window.autoTradingEnabled = false;
+window.simCapital = 10000; 
+window.autoPortfolio = [];
+window.autoClosedTrades = [];
 
 // --- 2. Controles de Interfaz del Bot ---
 window.toggleAutoTrading = () => {
     window.autoTradingEnabled = !window.autoTradingEnabled;
-    localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
+    if (window.cloudSynced) window.syncDataToFirebase();
     window.updateAutoTradeUI(); // Actualiza el botón en la interfaz visual
     
     if (window.autoTradingEnabled) {
@@ -48,12 +48,11 @@ window.removeFromAutoPortfolio = (index) => {
             profitPct: profitPct,
             date: new Date().toISOString()
         });
-        localStorage.setItem('advisor_auto_closed_trades', JSON.stringify(window.autoClosedTrades));
     }
 
     // Remover la acción del portfolio activo
     window.autoPortfolio.splice(index, 1);
-    localStorage.setItem('advisor_auto_portfolio', JSON.stringify(window.autoPortfolio));
+    if (window.cloudSynced) window.syncDataToFirebase();
     if (currentTerm === 'bot_portfolio') renderPortfolio(true);
 };
 

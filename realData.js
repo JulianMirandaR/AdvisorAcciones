@@ -46,23 +46,7 @@ export class RealDataService {
 
     // Método principal: Carga desde Firebase
     async loadStocks(onStockLoaded, onProgressMsg) {
-        const today = this.getTodayDateString();
-        const cacheKey = `stocks_cache_${today}`;
-
-        // 1. Cargar lo que ya hay en caché (Local Storage para velocidad inicial)
-        let currentCache = [];
-        try {
-            currentCache = JSON.parse(localStorage.getItem(cacheKey) || '[]');
-        } catch (e) {
-            console.error("Error reading cache", e);
-            currentCache = [];
-        }
-
-        // Informar UI inicial con caché
-        if (currentCache.length > 0) {
-            onStockLoaded(currentCache);
-        }
-
+        // 1. Ya no usamos localStorage para caché de mercado
         // 2. Obtener datos globales de Firebase (La nube)
         if (onProgressMsg) onProgressMsg("Sincronizando con la nube de precios...");
 
@@ -74,66 +58,14 @@ export class RealDataService {
             if (onProgressMsg) onProgressMsg(`⚠️ Error de Conexión Nube: ${e.code || e.message}`);
         }
 
-        let mergedList = [...currentCache];
-        const localMap = new Map(currentCache.map(s => [s.symbol, s]));
-
         if (firestoreData) {
-            let changes = false;
-            let loadedCount = 0;
-
-            Object.values(firestoreData).forEach(stockData => {
+            const mergedList = Object.values(firestoreData).map(stockData => {
                 if (stockData.history && typeof stockData.history === 'string') {
                     try { stockData.history = JSON.parse(stockData.history); } catch (e) {}
                 }
-                if (!localMap.has(stockData.symbol)) {
-                    mergedList.push(stockData);
-                    localMap.set(stockData.symbol, stockData);
-                    changes = true;
-                    loadedCount++;
-                } else {
-                    // Actualizamos si los datos de la nube son distintos al caché
-                    const index = mergedList.findIndex(s => s.symbol === stockData.symbol);
-                    if (index !== -1 && JSON.stringify(mergedList[index]) !== JSON.stringify(stockData)) {
-                        mergedList[index] = stockData;
-                        changes = true;
-                        loadedCount++;
-                    }
-                }
+                return stockData;
             });
-
-            if (changes || currentCache.length === 0) {
-                try {
-                    // Limpiar cachés antiguos para liberar espacio en localStorage
-                    const keysToRemove = [];
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const key = localStorage.key(i);
-                        if (key && key.startsWith('stocks_cache_') && key !== cacheKey) {
-                            keysToRemove.push(key);
-                        }
-                    }
-                    keysToRemove.forEach(k => localStorage.removeItem(k));
-
-                    try {
-                        localStorage.setItem(cacheKey, JSON.stringify(mergedList));
-                    } catch (quotaExceededError) {
-                        console.warn("Quota exceeded a pesar de limpiar. Guardando versión ligera sin historial completo.", quotaExceededError);
-                        // Limpiar todos los datos pesados para que el localStorage pueda guardarlo
-                        const lightList = mergedList.map(stock => {
-                            const { history, ...rest } = stock;
-                            // Dejamos al menos los últimos 6 precios en history ya que se usan para momentum (p1 y p5) en app.js
-                            if (history && history.prices && history.prices.length >= 6) {
-                                rest.history = { prices: history.prices.slice(-6) };
-                            }
-                            return rest;
-                        });
-                        localStorage.setItem(cacheKey, JSON.stringify(lightList));
-                    }
-                } catch (err) {
-                    console.error("Error gestionando caché:", err);
-                }
-                
-                onStockLoaded(mergedList);
-            }
+            onStockLoaded(mergedList);
             if (onProgressMsg) onProgressMsg("Datos de mercado actualizados exitosamente.");
         } else {
             console.log("No data in Firestore yet.");
@@ -143,18 +75,11 @@ export class RealDataService {
 
     // Método para cargar datos Macro (Indicador Buffett)
     async loadMacroIndicator(onMacroLoaded) {
-        const cacheKey = `macro_cache`;
-        try {
-            const currentCache = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-            if (currentCache) onMacroLoaded(currentCache);
-        } catch (e) { console.error("Error reading macro cache", e); }
-
         try {
             const docRef = doc(this.db, "macro", "latest");
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                localStorage.setItem(cacheKey, JSON.stringify(data));
                 onMacroLoaded(data);
             }
         } catch (e) {
@@ -164,18 +89,11 @@ export class RealDataService {
 
     // Método para cargar historial de CCL
     async loadCclHistory(onHistoryLoaded) {
-        const cacheKey = `ccl_history_cache`;
-        try {
-            const currentCache = JSON.parse(localStorage.getItem(cacheKey) || 'null');
-            if (currentCache) onHistoryLoaded(currentCache);
-        } catch (e) { console.error("Error reading CCL cache", e); }
-
         try {
             const docRef = doc(this.db, "macro", "ccl_history");
             const docSnap = await getDoc(docRef);
             if (docSnap.exists()) {
                 const data = docSnap.data();
-                localStorage.setItem(cacheKey, JSON.stringify(data));
                 onHistoryLoaded(data);
             }
         } catch (e) {

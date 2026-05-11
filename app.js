@@ -50,29 +50,29 @@ let globalCclHistory = null; // Historical CCL Data
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let activeSort = 'general'; // general, short, long
 let searchTerm = '';
-let watchlist = JSON.parse(localStorage.getItem('advisor_watchlist') || '[]');
-let portfolio = JSON.parse(localStorage.getItem('advisor_portfolio') || '[]');
+let watchlist = [];
+let portfolio = [];
 
-let closedTrades = JSON.parse(localStorage.getItem('advisor_closed_trades') || '[]');
+let closedTrades = [];
 const historialContainer = document.getElementById('historial-container');
 
 window.portfolioTerm = 'short'; // Plazo por defecto en la pestaña Mi Portafolio
 
 // --- SISTEMA DE NOTIFICACIONES Y ALERTAS ---
-window.notifications = JSON.parse(localStorage.getItem('advisor_notifications') || '[]');
-window.lastKnownSignals = JSON.parse(localStorage.getItem('advisor_last_signals') || '{}');
-window.priceAlerts = JSON.parse(localStorage.getItem('advisor_price_alerts') || '[]');
+window.notifications = [];
+window.lastKnownSignals = {};
+window.priceAlerts = [];
 window.cloudSynced = false;
 window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
-window.autoTradingEnabled = JSON.parse(localStorage.getItem('advisor_auto_trade') || 'false');
-window.simCapital = JSON.parse(localStorage.getItem('advisor_sim_capital') || '10000'); // Capital simulado base para auto-trading
-window.autoPortfolioLegacy = JSON.parse(localStorage.getItem('advisor_auto_portfolio_legacy') || '[]');
-window.autoClosedTradesLegacy = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_legacy') || '[]');
-window.autoPortfolioChatGPT = JSON.parse(localStorage.getItem('advisor_auto_portfolio_chatgpt') || '[]');
-window.autoClosedTradesChatGPT = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_chatgpt') || '[]');
-window.botInterval = JSON.parse(localStorage.getItem('advisor_bot_interval') || '5'); // Minutos entre ejecuciones
-window.lastBotExecution = JSON.parse(localStorage.getItem('advisor_last_bot_execution') || '0'); // Timestamp última ejecución
-window.botTestMode = JSON.parse(localStorage.getItem('advisor_bot_test_mode') || 'false'); // Modo Test (Agresivo)
+window.autoTradingEnabled = false;
+window.simCapital = 10000; // Capital simulado base para auto-trading
+window.autoPortfolioLegacy = [];
+window.autoClosedTradesLegacy = [];
+window.autoPortfolioChatGPT = [];
+window.autoClosedTradesChatGPT = [];
+window.botInterval = 5; // Minutos entre ejecuciones
+window.lastBotExecution = 0; // Timestamp última ejecución
+window.botTestMode = false; // Modo Test (Agresivo)
 
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
@@ -103,7 +103,6 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
             executionScore: pos.executionScore || null,
             marketCondition: currentMarketCondition
         });
-        localStorage.setItem(storageKeyHistory, JSON.stringify(historyArr));
 
         // Enviar feedback a OpenAI backend para mejorar análisis futuros (solo si es bot chatgpt o si queremos ambos)
         if (botType === 'chatgpt') {
@@ -122,14 +121,14 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
     }
 
     portfolioArr.splice(index, 1);
-    localStorage.setItem(storageKeyPortfolio, JSON.stringify(portfolioArr));
+    if (window.cloudSynced) window.syncDataToFirebase();
     if (window.cloudSynced) window.syncDataToFirebase();
     if (currentTerm === 'bot_legacy_portfolio' || currentTerm === 'bot_chatgpt_portfolio') renderPortfolio();
 };
 
 window.toggleAutoTrading = () => {
     window.autoTradingEnabled = !window.autoTradingEnabled;
-    localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
+    if (window.cloudSynced) window.syncDataToFirebase();
     if (window.cloudSynced) window.syncDataToFirebase();
     window.updateAutoTradeUI();
     
@@ -225,10 +224,6 @@ window.saveBotSettings = () => {
     window.simCapital = capital;
     window.botTestMode = testModeVal;
     
-    localStorage.setItem('advisor_bot_interval', JSON.stringify(interval));
-    localStorage.setItem('advisor_sim_capital', JSON.stringify(capital));
-    localStorage.setItem('advisor_bot_test_mode', JSON.stringify(testModeVal));
-    
     window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}${testModeVal ? ' (MODO TEST ACTIVADO)' : ''}`, "info");
     document.getElementById('botSettingsModal').style.display = 'none';
     
@@ -252,14 +247,15 @@ window.toggleNotifications = () => {
             badge.style.display = 'none';
             badge.textContent = '0';
         }
-        localStorage.setItem('advisor_unread_notifs', '0');
+        window.unreadNotifs = 0;
+        if (window.cloudSynced) window.syncDataToFirebase();
     }
 };
 
 window.deleteNotification = (id, event) => {
     if (event) event.stopPropagation();
     window.notifications = window.notifications.filter(n => n.id !== id);
-    localStorage.setItem('advisor_notifications', JSON.stringify(window.notifications));
+    if (window.cloudSynced) window.syncDataToFirebase();
     window.renderNotifications();
 };
 
@@ -299,18 +295,16 @@ window.addNotification = (message, type = 'info', symbol = null) => {
         window.notifications = window.notifications.slice(0, 20);
     }
     
-    localStorage.setItem('advisor_notifications', JSON.stringify(window.notifications));
+    if (window.cloudSynced) window.syncDataToFirebase();
     
     // Update badge visually if dropdown is not open
     const dropdown = document.getElementById('notifDropdown');
     if (!dropdown || !dropdown.classList.contains('show')) {
-        let unread = parseInt(localStorage.getItem('advisor_unread_notifs') || '0');
-        unread += 1;
-        localStorage.setItem('advisor_unread_notifs', unread.toString());
+        window.unreadNotifs = (window.unreadNotifs || 0) + 1;
         
         const badge = document.getElementById('notifBadge');
         if (badge) {
-            badge.textContent = unread;
+            badge.textContent = window.unreadNotifs;
             badge.style.display = 'inline-block';
         }
     } else {
@@ -320,11 +314,10 @@ window.addNotification = (message, type = 'info', symbol = null) => {
 
 // Initial boot logic para mostrar el numerito en recargas
 setTimeout(() => {
-    let unread = parseInt(localStorage.getItem('advisor_unread_notifs') || '0');
-    if (unread > 0) {
+    if (window.unreadNotifs > 0) {
         const badge = document.getElementById('notifBadge');
         if (badge) {
-            badge.textContent = unread;
+            badge.textContent = window.unreadNotifs;
             badge.style.display = 'inline-block';
         }
     }
@@ -472,7 +465,6 @@ function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'cha
         const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
         window.addNotification(`${botName}: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
         
-        console.log(`[STAGE 7] Añadiendo a portfolio y guardando en localStorage`);
         portfolioArr.push({
             symbol: stock.symbol,
             price: parseFloat(stock.price),
@@ -484,7 +476,7 @@ function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'cha
             marketCondition: analysis.contexto_mercado || 'Desconocido'
         });
         
-        localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
+        if (window.cloudSynced) window.syncDataToFirebase();
         console.log(`✅ [STAGE 8] Compra exitosa en Bot ${botType}. Portfolio actualizado.`);
         return true;
     } catch (error) {
@@ -553,10 +545,8 @@ function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
     }
     
     // Si modificamos tamaño (Take Profit) o actualizamos highestPrice, regresamos true
-    // para indicar que ocurrió un cambio que necesita persistir en localStorage.
     if (partialSale || currentPrice === autoPos.highestPrice) {
-        const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
-        localStorage.setItem(storageKey, JSON.stringify(portfolioArr));
+        if (window.cloudSynced) window.syncDataToFirebase();
         return true;
     }
     
@@ -584,7 +574,7 @@ function checkNotifications(force = false) {
             console.log("🤖 Ejecutando ciclo de Auto-Trading...");
             shouldBotTrade = true;
             window.lastBotExecution = now;
-            localStorage.setItem('advisor_last_bot_execution', JSON.stringify(now));
+            if (window.cloudSynced) window.syncDataToFirebase();
         }
     } else if (window.autoTradingEnabled && force) {
         console.log("🤖 Procesando resultado de análisis autónomo (FORCE=TRUE)...");
@@ -727,8 +717,6 @@ function checkNotifications(force = false) {
     });
 
     if (hasChanges) {
-        localStorage.setItem('advisor_last_signals', JSON.stringify(window.lastKnownSignals));
-        localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
         if(window.cloudSynced) window.syncDataToFirebase();
     }
     
@@ -1180,7 +1168,6 @@ window.toggleWatchlist = (symbol, event) => {
     if (index === -1) {
         watchlist.push(symbol);
     }
-    localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
     if (window.cloudSynced) window.syncDataToFirebase();
     refreshUI();
 };
@@ -1190,13 +1177,10 @@ window.clearPortfolio = (viewType = 'user') => {
     
     if (viewType === 'legacy') {
         window.autoPortfolioLegacy = [];
-        localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(window.autoPortfolioLegacy));
     } else if (viewType === 'chatgpt') {
         window.autoPortfolioChatGPT = [];
-        localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(window.autoPortfolioChatGPT));
     } else {
         portfolio = [];
-        localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
     }
     
     if (window.cloudSynced) window.syncDataToFirebase();
@@ -1209,11 +1193,8 @@ window.clearHistory = (viewType = 'user') => {
     if (viewType === 'bots') {
         window.autoClosedTradesLegacy = [];
         window.autoClosedTradesChatGPT = [];
-        localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
-        localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
     } else {
         closedTrades = [];
-        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
     }
     
     if (window.cloudSynced) window.syncDataToFirebase();
@@ -1231,17 +1212,14 @@ window.removeFromHistory = (index, viewType = 'user') => {
         const idxLegacy = window.autoClosedTradesLegacy.indexOf(tradeToDelete);
         if (idxLegacy !== -1) {
             window.autoClosedTradesLegacy.splice(idxLegacy, 1);
-            localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
         } else {
             const idxChat = window.autoClosedTradesChatGPT.indexOf(tradeToDelete);
             if (idxChat !== -1) {
                 window.autoClosedTradesChatGPT.splice(idxChat, 1);
-                localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
             }
         }
     } else {
         closedTrades.splice(index, 1);
-        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
     }
     
     if (window.cloudSynced) window.syncDataToFirebase();
@@ -1266,11 +1244,9 @@ window.removeFromPortfolio = (index) => {
             profitPct: profitPct,
             date: new Date().toISOString()
         });
-        localStorage.setItem('advisor_closed_trades', JSON.stringify(closedTrades));
     }
 
     portfolio.splice(index, 1);
-    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
     if(window.cloudSynced) window.syncDataToFirebase();
     renderPortfolio();
 };
@@ -1311,7 +1287,6 @@ window.confirmAddToPortfolio = () => {
         qty: qty
     });
 
-    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
     if(window.cloudSynced) window.syncDataToFirebase();
     
     // Ocultar modal y dar feedback
@@ -1463,10 +1438,6 @@ function renderPortfolio(viewType = 'user') {
     tableHtml += `</tbody></table></div>`;
 
     if (hasPortfolioChanges) {
-        if (viewType === 'legacy') localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(targetPortfolio));
-        else if (viewType === 'chatgpt') localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(targetPortfolio));
-        else localStorage.setItem('advisor_portfolio', JSON.stringify(targetPortfolio));
-        
         if(window.cloudSynced) window.syncDataToFirebase();
     }
 
@@ -1750,59 +1721,50 @@ onAuthStateChanged(auth, async (user) => {
         document.getElementById('cloudStatusText').innerText = "Conectado";
         document.getElementById('cloudStatusText').style.color = "var(--accent-green)";
         
-        // Cargar datos de la nube
+        // --- ESTABLECER SESIÓN EN EL BACKEND ---
         try {
-            const docRef = doc(db, "users", user.uid);
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists()) {
-                const d = docSnap.data();
-                if (d.portfolio) {
-                    portfolio = d.portfolio;
-                    localStorage.setItem('advisor_portfolio', JSON.stringify(portfolio));
-                }
-                if (d.watchlist) {
-                    watchlist = d.watchlist;
-                    localStorage.setItem('advisor_watchlist', JSON.stringify(watchlist));
-                }
-                if (d.simCapital) {
-                    window.simCapital = d.simCapital;
-                    localStorage.setItem('advisor_sim_capital', JSON.stringify(window.simCapital));
-                }
-                if (d.botInterval) {
-                    window.botInterval = d.botInterval;
-                    localStorage.setItem('advisor_bot_interval', JSON.stringify(window.botInterval));
-                }
+            await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid: user.uid })
+            });
+
+            // Cargar datos desde el Backend (que a su vez lee Firestore)
+            const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`);
+            if (response.ok) {
+                const d = await response.json();
+                if (d.portfolio) portfolio = d.portfolio;
+                if (d.watchlist) watchlist = d.watchlist;
+                if (d.simCapital) window.simCapital = d.simCapital;
+                if (d.botInterval) window.botInterval = d.botInterval;
                 if (d.autoTradingEnabled !== undefined) {
                     window.autoTradingEnabled = d.autoTradingEnabled;
-                    localStorage.setItem('advisor_auto_trade', JSON.stringify(window.autoTradingEnabled));
                     if(typeof window.updateAutoTradeUI === 'function') window.updateAutoTradeUI();
                 }
-                if (d.autoPortfolioLegacy) {
-                    window.autoPortfolioLegacy = d.autoPortfolioLegacy;
-                    localStorage.setItem('advisor_auto_portfolio_legacy', JSON.stringify(window.autoPortfolioLegacy));
-                }
-                if (d.autoClosedTradesLegacy) {
-                    window.autoClosedTradesLegacy = d.autoClosedTradesLegacy;
-                    localStorage.setItem('advisor_auto_closed_trades_legacy', JSON.stringify(window.autoClosedTradesLegacy));
-                }
-                if (d.autoPortfolioChatGPT) {
-                    window.autoPortfolioChatGPT = d.autoPortfolioChatGPT;
-                    localStorage.setItem('advisor_auto_portfolio_chatgpt', JSON.stringify(window.autoPortfolioChatGPT));
-                }
-                if (d.autoClosedTradesChatGPT) {
-                    window.autoClosedTradesChatGPT = d.autoClosedTradesChatGPT;
-                    localStorage.setItem('advisor_auto_closed_trades_chatgpt', JSON.stringify(window.autoClosedTradesChatGPT));
-                }
-                
+                if (d.autoPortfolioLegacy) window.autoPortfolioLegacy = d.autoPortfolioLegacy;
+                if (d.autoClosedTradesLegacy) window.autoClosedTradesLegacy = d.autoClosedTradesLegacy;
+                if (d.autoPortfolioChatGPT) window.autoPortfolioChatGPT = d.autoPortfolioChatGPT;
+                if (d.autoClosedTradesChatGPT) window.autoClosedTradesChatGPT = d.autoClosedTradesChatGPT;
+                if (d.notifications) window.notifications = d.notifications;
+                if (d.lastKnownSignals) window.lastKnownSignals = d.lastKnownSignals;
+                if (d.priceAlerts) window.priceAlerts = d.priceAlerts;
+                if (d.unreadNotifs) window.unreadNotifs = d.unreadNotifs;
+                if (d.lastBotExecution) window.lastBotExecution = d.lastBotExecution;
+                if (d.botTestMode !== undefined) window.botTestMode = d.botTestMode;
+                if (d.closedTrades) closedTrades = d.closedTrades;
             }
         } catch(e) {
-            console.error("Error cargando perfil nube", e);
+            console.error("Error sincronizando sesión o cargando datos", e);
         }
         if(typeof refreshUI === 'function') refreshUI();
     } else {
         window.cloudSynced = false;
         document.getElementById('cloudStatusText').innerText = "Iniciar Sesión";
         document.getElementById('cloudStatusText').style.color = "inherit";
+        
+        // Cerrar sesión en el backend
+        fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/logout`, { method: 'POST' });
+        
         if (typeof refreshUI === 'function') refreshUI(); // Actualizar UI para ocultar panel
     }
 });
@@ -1810,22 +1772,30 @@ onAuthStateChanged(auth, async (user) => {
 window.syncDataToFirebase = async function() {
    if (!auth.currentUser) return;
    try {
-       const docRef = doc(db, "users", auth.currentUser.uid);
-       await setDoc(docRef, {
-           portfolio: portfolio,
-           watchlist: watchlist,
-           priceAlerts: window.priceAlerts,
-           autoTradingEnabled: window.autoTradingEnabled,
-           simCapital: window.simCapital,
-           botInterval: window.botInterval,
-           autoPortfolioLegacy: window.autoPortfolioLegacy,
-           autoClosedTradesLegacy: window.autoClosedTradesLegacy,
-           autoPortfolioChatGPT: window.autoPortfolioChatGPT,
-           autoClosedTradesChatGPT: window.autoClosedTradesChatGPT,
-           updatedAt: new Date().toISOString()
-       }, { merge: true });
+       await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
+           method: 'POST',
+           headers: { 'Content-Type': 'application/json' },
+           body: JSON.stringify({
+               portfolio: portfolio,
+               watchlist: watchlist,
+               priceAlerts: window.priceAlerts,
+               autoTradingEnabled: window.autoTradingEnabled,
+               simCapital: window.simCapital,
+               botInterval: window.botInterval,
+               autoPortfolioLegacy: window.autoPortfolioLegacy,
+               autoClosedTradesLegacy: window.autoClosedTradesLegacy,
+               autoPortfolioChatGPT: window.autoPortfolioChatGPT,
+               autoClosedTradesChatGPT: window.autoClosedTradesChatGPT,
+               notifications: window.notifications,
+               lastKnownSignals: window.lastKnownSignals,
+               unreadNotifs: window.unreadNotifs,
+               lastBotExecution: window.lastBotExecution,
+               botTestMode: window.botTestMode,
+               closedTrades: closedTrades
+           })
+       });
    } catch(e) {
-       console.error("Error subiendo datos", e);
+       console.error("Error subiendo datos al backend", e);
    }
 };
 
@@ -1855,7 +1825,7 @@ window.savePriceAlert = function() {
         createdAt: new Date().toISOString()
     });
     
-    localStorage.setItem('advisor_price_alerts', JSON.stringify(window.priceAlerts));
+    if (window.cloudSynced) window.syncDataToFirebase();
     document.getElementById('alertModal').style.display = 'none';
     alert(`Alerta guardada para ${currentAlertSymbol} al llegar a $${inputPrice}.`);
 };
