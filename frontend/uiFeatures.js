@@ -93,7 +93,7 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
     }
 
     try {
-        const response = await fetch('/api/analyze', {
+        const response = await fetch(`${window.API_BASE_URL}/analyze`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -102,10 +102,7 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
         });
 
         if (!response.ok) {
-            if (response.status === 405 || response.status === 404) {
-                throw new Error("El servidor backend (Vercel API) no está corriendo. Si estás en local, usa 'vercel dev' en lugar de Live Server.");
-            }
-            throw new Error(`Error HTTP: ${response.status}`);
+            throw new Error(`Error en el servidor de IA (${response.status}). Verifica que el backend en Railway esté activo.`);
         }
 
         const result = await response.json();
@@ -237,18 +234,14 @@ window.requestAIAnalysisHeadless = async function(symbol) {
     console.log(`🤖 Bot ChatGPT: Solicitando análisis autónomo para ${symbol}...`);
 
     try {
-        const response = await fetch('/api/analyze', {
+        const response = await fetch(`${window.API_BASE_URL}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ symbol, stockData })
         });
 
         if (!response.ok) {
-            if (response.status === 405 || response.status === 404) {
-                console.error(`❌ Error 405/404: El servidor API no está disponible en este puerto (estás usando Live Server?). Usa el puerto de 'vercel dev' (ej. localhost:3000).`);
-            } else {
-                console.error(`❌ Error en API OpenAI para ${symbol}: ${response.status}`);
-            }
+            console.error(`❌ Error en API Railway para ${symbol}: ${response.status}`);
             return;
         }
 

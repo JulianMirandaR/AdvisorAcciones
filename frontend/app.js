@@ -11,6 +11,9 @@ import { runWalkForwardBacktest } from './walkForwardEngine.js';
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
 
+// Configuración de API Backend (Railway)
+window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
+
 window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 
 window.setStrategyMode = (mode) => {
@@ -69,6 +72,7 @@ window.autoPortfolioChatGPT = JSON.parse(localStorage.getItem('advisor_auto_port
 window.autoClosedTradesChatGPT = JSON.parse(localStorage.getItem('advisor_auto_closed_trades_chatgpt') || '[]');
 window.botInterval = JSON.parse(localStorage.getItem('advisor_bot_interval') || '5'); // Minutos entre ejecuciones
 window.lastBotExecution = JSON.parse(localStorage.getItem('advisor_last_bot_execution') || '0'); // Timestamp última ejecución
+window.botTestMode = JSON.parse(localStorage.getItem('advisor_bot_test_mode') || 'false'); // Modo Test (Agresivo)
 
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
@@ -103,7 +107,7 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
 
         // Enviar feedback a OpenAI backend para mejorar análisis futuros (solo si es bot chatgpt o si queremos ambos)
         if (botType === 'chatgpt') {
-            fetch('/api/feedback', {
+            fetch(`${window.API_BASE_URL}/feedback`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -196,12 +200,14 @@ window.updateAutoTradeUI = () => {
 window.openBotSettings = () => {
     document.getElementById('botIntervalInput').value = window.botInterval;
     document.getElementById('botCapitalInput').value = window.simCapital;
+    document.getElementById('botTestModeInput').checked = window.botTestMode;
     document.getElementById('botSettingsModal').style.display = 'flex';
 };
 
 window.saveBotSettings = () => {
     const intervalVal = document.getElementById('botIntervalInput').value;
     const capitalVal = document.getElementById('botCapitalInput').value;
+    const testModeVal = document.getElementById('botTestModeInput').checked;
     
     const interval = parseInt(intervalVal);
     const capital = parseFloat(capitalVal);
@@ -217,11 +223,13 @@ window.saveBotSettings = () => {
     
     window.botInterval = interval;
     window.simCapital = capital;
+    window.botTestMode = testModeVal;
     
     localStorage.setItem('advisor_bot_interval', JSON.stringify(interval));
     localStorage.setItem('advisor_sim_capital', JSON.stringify(capital));
+    localStorage.setItem('advisor_bot_test_mode', JSON.stringify(testModeVal));
     
-    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}`, "info");
+    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}${testModeVal ? ' (MODO TEST ACTIVADO)' : ''}`, "info");
     document.getElementById('botSettingsModal').style.display = 'none';
     
     if (window.cloudSynced) {
@@ -558,12 +566,16 @@ function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
 
 window.checkNotifications = checkNotifications;
 function checkNotifications(force = false) {
+    console.log(`[DEBUG] checkNotifications(force=${force}) - autoTradingEnabled: ${window.autoTradingEnabled}`);
     let shouldBotTrade = force;
     // Si el auto-trading está activo, verificar frecuencia
     if (window.autoTradingEnabled && !shouldBotTrade) {
         const now = Date.now();
-        const elapsed = now - window.lastBotExecution;
-        const required = window.botInterval * 60 * 1000;
+        const lastExec = window.lastBotExecution || 0;
+        const elapsed = now - lastExec;
+        const required = (window.botInterval || 5) * 60 * 1000;
+        
+        console.log(`[DEBUG] Interval check: elapsed=${(elapsed/1000/60).toFixed(2)} min, required=${(required/1000/60).toFixed(2)} min`);
         
         if (elapsed < required) {
             const remaining = Math.ceil((required - elapsed) / 1000 / 60);
@@ -575,15 +587,20 @@ function checkNotifications(force = false) {
             localStorage.setItem('advisor_last_bot_execution', JSON.stringify(now));
         }
     } else if (window.autoTradingEnabled && force) {
-        console.log("🤖 Procesando resultado de análisis autónomo...");
+        console.log("🤖 Procesando resultado de análisis autónomo (FORCE=TRUE)...");
     }
 
-    const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
+    const vix = (globalMacroData && globalMacroData.vix) ? globalMacroData.vix : 25;
     const marketCondition = getMarketCondition(vix);
+    console.log(`[DEBUG] Market Condition: ${marketCondition} (VIX: ${vix}), shouldBotTrade: ${shouldBotTrade}`);
     
     let hasChanges = false;
     let hasBotChanges = false;
     
+    if (!globalStocksData || globalStocksData.length === 0) {
+        console.warn("[DEBUG] globalStocksData está vacío o no definido.");
+    }
+
     globalStocksData.forEach(stock => {
         const portfolioPos = portfolio.find(p => p.symbol === stock.symbol);
         const portfolioInfo = portfolioPos ? { entryPrice: portfolioPos.price, highestPrice: portfolioPos.highestPrice } : null;
@@ -605,7 +622,7 @@ function checkNotifications(force = false) {
             }
         }
 
-        // 2. Lógica de Auto-Trading: BOT LEGACY (Criterio: Conservador, Solo Técnico + IA Local)
+        // 2. Lógica de Auto-Trading: BOT LEGACY
         if (window.autoTradingEnabled) {
             const autoPosLegacy = window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol);
             const legacyAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosLegacy, 'legacy');
@@ -613,16 +630,25 @@ function checkNotifications(force = false) {
             if (autoPosLegacy) {
                 if (manageOpenPositions(stock, legacyAnalysis, prevSignal, 'legacy')) hasBotChanges = true;
             } else if (!portfolioPos && shouldBotTrade) {
-                const legacyTechOk = validateEntry(legacyAnalysis, stock.symbol);
+                // Validación técnica: En modo test somos permisivos
+                const legacyTechOk = window.botTestMode ? { valid: true } : validateEntry(legacyAnalysis, stock.symbol); 
+                
                 if (legacyTechOk.valid) {
                     const aiData = (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[stock.symbol]) ? window.aiPredictionCacheLegacy[stock.symbol] : null;
-                    if (aiData && aiData.usable && aiData.probability > 0.60) { 
+                    
+                    const probThreshold = window.botTestMode ? 0.10 : 0.60;
+                    const scoreThreshold = window.botTestMode ? 1 : 7;
+
+                    if (aiData && aiData.usable && aiData.probability > probThreshold) { 
                         const execScore = calculateExecutionScore(stock, legacyAnalysis, aiData);
-                        if (execScore >= 7) { 
-                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy (Agresivo)", 'legacy')) hasBotChanges = true;
+                        console.log(`[DEBUG] Candidate Legacy ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
+                        if (execScore >= scoreThreshold) { 
+                            if (executeTrade(stock, legacyAnalysis, execScore, window.botTestMode ? "MODO TEST: Compra Forzada" : "Setup Técnico + IA Legacy", 'legacy')) hasBotChanges = true;
+                        } else if (window.botTestMode) {
+                            console.log(`[DEBUG] Candidate Legacy ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
                         }
-                    } else if (!aiData && legacyAnalysis.score >= 7) {
-                        console.log(`🤖 Bot Legacy: ${stock.symbol} tiene buen puntaje técnico (${legacyAnalysis.score}), solicitando IA...`);
+                    } else if (!aiData && (window.botTestMode || legacyAnalysis.score >= 7)) {
+                        console.log(`🤖 Bot Legacy: ${stock.symbol} solicitando IA${window.botTestMode ? ' (Modo Test)' : ''}...`);
                         if (window.requestAILegacyHeadless) {
                             window.requestAILegacyHeadless(stock.symbol);
                         }
@@ -630,24 +656,32 @@ function checkNotifications(force = false) {
                 }
             }
 
-            // 3. Lógica de Auto-Trading: BOT CHATGPT (Criterio: Agresivo, Basado en OpenAI)
+            // 3. Lógica de Auto-Trading: BOT CHATGPT
             const autoPosChatGPT = window.autoPortfolioChatGPT.find(p => p.symbol === stock.symbol);
             const chatgptAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosChatGPT, 'openai');
             
             if (autoPosChatGPT) {
                 if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
             } else if (!portfolioPos && !autoPosLegacy && shouldBotTrade) {
-                const chatgptTechOk = validateEntry(chatgptAnalysis, stock.symbol);
+                // Validación técnica: En modo test somos permisivos
+                const chatgptTechOk = window.botTestMode ? { valid: true } : validateEntry(chatgptAnalysis, stock.symbol);
+                
                 if (chatgptTechOk.valid) {
                     const aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[stock.symbol]) ? window.aiPredictionCacheOpenAI[stock.symbol] : null;
                     
-                    if (aiData && aiData.usable && aiData.probability > 0.50) { 
+                    const probThreshold = window.botTestMode ? 0.10 : 0.50;
+                    const scoreThreshold = window.botTestMode ? 1 : 5;
+
+                    if (aiData && aiData.usable && aiData.probability > probThreshold) { 
                         const execScore = calculateExecutionScore(stock, chatgptAnalysis, aiData);
-                        if (execScore >= 5) { 
-                            if (executeTrade(stock, chatgptAnalysis, execScore, "Setup Técnico + OpenAI (Agresivo)", 'chatgpt')) hasBotChanges = true;
+                        console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
+                        if (execScore >= scoreThreshold) { 
+                            if (executeTrade(stock, chatgptAnalysis, execScore, window.botTestMode ? "MODO TEST: Compra Forzada" : "Setup Técnico + OpenAI", 'chatgpt')) hasBotChanges = true;
+                        } else if (window.botTestMode) {
+                            console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
                         }
-                    } else if (!aiData && chatgptAnalysis.score >= 6) {
-                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} tiene buen puntaje técnico (${chatgptAnalysis.score}), solicitando IA...`);
+                    } else if (!aiData && (window.botTestMode || chatgptAnalysis.score >= 6)) {
+                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} solicitando IA${window.botTestMode ? ' (Modo Test)' : ''}...`);
                         if (window.requestAIAnalysisHeadless) {
                             window.requestAIAnalysisHeadless(stock.symbol);
                         }
