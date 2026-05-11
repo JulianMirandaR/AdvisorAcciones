@@ -3,15 +3,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 
-const firebaseConfig = {
-    apiKey: "AIzaSyC7bIZOsDhg0iXGrm6aBD3c37AD3ZkUmTE",
-    authDomain: "advisoracciones.firebaseapp.com",
-    projectId: "advisoracciones",
-    storageBucket: "advisoracciones.firebasestorage.app",
-    messagingSenderId: "454193425218",
-    appId: "1:454193425218:web:54b7136d042ecd951876db",
-    measurementId: "G-7KQ8CF2SXJ"
-};
+// Obtener configuración de Firebase desde el backend para evitar exponer claves en el código
+const configResponse = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/config');
+const firebaseConfig = await configResponse.json();
 
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig);
