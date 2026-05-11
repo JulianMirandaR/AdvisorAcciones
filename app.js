@@ -1730,11 +1730,14 @@ onAuthStateChanged(auth, async (user) => {
             await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uid: user.uid })
+                body: JSON.stringify({ uid: user.uid }),
+                credentials: 'include'
             });
 
             // Cargar datos desde el Backend (que a su vez lee Firestore)
-            const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`);
+            const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
+                credentials: 'include'
+            });
             if (response.ok) {
                 const d = await response.json();
                 if (d.portfolio) portfolio = d.portfolio;
@@ -1767,7 +1770,10 @@ onAuthStateChanged(auth, async (user) => {
         document.getElementById('cloudStatusText').style.color = "inherit";
         
         // Cerrar sesión en el backend
-        fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/logout`, { method: 'POST' });
+        fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/logout`, { 
+            method: 'POST',
+            credentials: 'include'
+        });
         
         if (typeof refreshUI === 'function') refreshUI(); // Actualizar UI para ocultar panel
     }
