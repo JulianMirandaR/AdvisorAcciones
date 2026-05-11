@@ -15,6 +15,9 @@ const chartInstances = {};
 window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
 
 window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
+window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
+
+window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 
 window.setStrategyMode = (mode) => {
     window.strategyMode = mode;
@@ -22,11 +25,10 @@ window.setStrategyMode = (mode) => {
 };
 
 window.aiPredictionCache = {};
+window.aiPredictionCacheLegacy = {};
+window.pendingAnalysesLegacy = new Set();
+window.pendingAnalysesOpenAI = new Set();
 window.predictAILegacy = (symbol) => handlePredictAILegacy(symbol, globalStocksData, refreshUI);
-window.predictOpenAI = (symbol) => handlePredictOpenAI(symbol, globalStocksData, refreshUI);
-window.openNewsModal = (symbol) => handleOpenNewsModal(symbol, globalStocksData);
-window.runWalkForwardBacktest = runWalkForwardBacktest;
-
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
 
@@ -101,7 +103,8 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
             exitReason: exitReason,
             entryReason: pos.entryReason || "Desconocido",
             executionScore: pos.executionScore || null,
-            marketCondition: currentMarketCondition
+            marketCondition: currentMarketCondition,
+            botType: botType
         });
 
         // Enviar feedback a OpenAI backend para mejorar análisis futuros (solo si es bot chatgpt o si queremos ambos)
@@ -473,7 +476,8 @@ function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'cha
             takenProfit: false,
             executionScore: executionScore,
             entryReason: reasonStr,
-            marketCondition: analysis.contexto_mercado || 'Desconocido'
+            marketCondition: analysis.contexto_mercado || 'Desconocido',
+            botType: botType
         });
         
         if (window.cloudSynced) window.syncDataToFirebase();
@@ -2546,6 +2550,7 @@ function renderHistorial(viewType = 'user') {
         <thead>
             <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
                 <th style="padding: 0.75rem;">Fecha</th>
+                <th style="padding: 0.75rem;">Bot</th>
                 <th style="padding: 0.75rem;">Activo</th>
                 <th style="padding: 0.75rem;">Cant.</th>
                 <th style="padding: 0.75rem;">Invertido</th>
@@ -2583,9 +2588,12 @@ function renderHistorial(viewType = 'user') {
         const investedAmount = trade.qty ? (parseFloat(trade.qty) * parseFloat(trade.entryPrice)) : 0;
         const invStr = investedAmount > 0 ? `${curStr} ${investedAmount.toFixed(2)}` : '-';
 
+        const botLabel = trade.botType === 'legacy' ? '<span style="background:#8b5cf6; color:white; padding:2px 5px; border-radius:3px; font-size:0.7rem;">LEGACY</span>' : '<span style="background:#10a37f; color:white; padding:2px 5px; border-radius:3px; font-size:0.7rem;">OPENAI</span>';
+
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color);">
                 <td style="padding: 0.75rem; color:var(--text-secondary);">${dateStr}</td>
+                <td style="padding: 0.75rem;">${botLabel}</td>
                 <td style="padding: 0.75rem; font-weight: bold;">${trade.symbol}</td>
                 <td style="padding: 0.75rem; color:var(--text-secondary);">${qtyStr}</td>
                 <td style="padding: 0.75rem;">${invStr}</td>
