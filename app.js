@@ -29,6 +29,7 @@ window.aiPredictionCacheLegacy = {};
 window.pendingAnalysesLegacy = new Set();
 window.pendingAnalysesOpenAI = new Set();
 window.predictAILegacy = (symbol) => handlePredictAILegacy(symbol, globalStocksData, refreshUI);
+window.predictOpenAI = (symbol) => handlePredictOpenAI(symbol, globalStocksData, refreshUI);
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
 
@@ -1785,6 +1786,7 @@ window.syncDataToFirebase = async function() {
        await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
+           credentials: 'include',
            body: JSON.stringify({
                portfolio: portfolio,
                watchlist: watchlist,
