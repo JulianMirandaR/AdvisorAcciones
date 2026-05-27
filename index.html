@@ -24,6 +24,11 @@
             <h1>Advisor de Inversiones</h1>
             <p>Análisis Técnico y Fundamental en Tiempo Real</p>
             <div class="header-controls">
+                <div id="iolStatusBadge" style="display: flex; align-items: center; padding: 0.4rem 0.8rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-secondary); margin-right: 0.5rem;" title="Estado de Conexión de InvertirOnline">
+                    <span style="font-weight: bold; margin-right: 0.4rem;">IOL:</span>
+                    <span id="iolStatusText">Cargando...</span>
+                    <span id="iolBalanceText" style="margin-left: 0.5rem; color: var(--accent-green); font-weight: bold;"></span>
+                </div>
                 <button onclick="window.openAuthModal()" class="auth-btn" id="cloudSyncBtn">
                     <span id="cloudStatusText">Iniciar Sesión</span>
                 </button>

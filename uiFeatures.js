@@ -9,15 +9,39 @@ export async function handlePredictAILegacy(symbol, globalStocksData, callbackRe
     if (!stockData) return;
     
     const btn = document.getElementById(`btn-ai-${symbol}`);
-    const originalText = btn.innerHTML;
+    const originalText = btn ? btn.innerHTML : '';
 
     if (window.aiPredictionCacheLegacy[symbol]) {
         callbackRefreshUI();
         return;
     }
-    
-    btn.innerHTML = '⚙️ Pensando (Legacy)...';
-    btn.disabled = true;
+
+    // --- LEER PREDICCIÓN PRE-CALCULADA DE FIRESTORE (RECOMENDADO) ---
+    if (stockData.aiPredictionLegacy && !stockData.aiPredictionLegacy.error) {
+        window.aiPredictionCacheLegacy[symbol] = stockData.aiPredictionLegacy;
+        const result = stockData.aiPredictionLegacy;
+
+        const popText = `🤖 IA PREDICT LEGACY (PRE-CALCULADA | ${symbol})
+----------------------------------
+${result.thought || 'Análisis basado en patrones históricos'}
+----------------------------------
+📊 Probabilidad: ${(result.probability * 100).toFixed(1)}%
+🎯 Confianza: ${result.confidence.toFixed(1)}/100
+⚠️ Incertidumbre: ${(result.uncertainty * 100).toFixed(1)}%
+
+🧠 Interpretación:
+${interpretAI(result)}
+`;
+        alert(popText);
+        callbackRefreshUI();
+        return;
+    }
+
+    // Fallback: Entrenar en navegador si no está pre-calculado
+    if (btn) {
+        btn.innerHTML = '⚙️ Pensando (Legacy)...';
+        btn.disabled = true;
+    }
     
     try {
         // 🔥 ENSEMBLE (3 corridas)
@@ -286,11 +310,23 @@ window.requestAILegacyHeadless = async function(symbol) {
         return;
     }
 
+    // --- USAR PREDICCIÓN PRE-CALCULADA SI EXISTE ---
+    if (stockData.aiPredictionLegacy && !stockData.aiPredictionLegacy.error) {
+        window.aiPredictionCacheLegacy[symbol] = {
+            ...stockData.aiPredictionLegacy,
+            usable: true
+        };
+        console.log(`✅ Bot Legacy: Usando predicción pre-calculada de Firestore para ${symbol}. Prob: ${stockData.aiPredictionLegacy.probability.toFixed(2)}`);
+        if (typeof window.checkNotifications === 'function') window.checkNotifications(true);
+        if (typeof window.refreshUI === 'function') window.refreshUI();
+        return;
+    }
+
     // Validar que hay suficientes datos históricos antes de llamar al motor de IA
     const MIN_DAYS = 85; // windowSize(20) + horizon(5) + 60
     const prices = stockData.history && stockData.history.prices;
     if (!prices || !Array.isArray(prices) || prices.length < MIN_DAYS) {
-        console.warn(`⚠️ Bot Legacy: ${symbol} tiene datos insuficientes para IA (${prices ? prices.length : 0} días, mínimo ${MIN_DAYS}). Omitiendo.`);
+        console.warn(`⚠️ Bot Legacy: ${symbol} tiene datos insuficientes para IA y no tiene predicciones en Firestore.`);
         return;
     }
     

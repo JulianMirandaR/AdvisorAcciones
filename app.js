@@ -805,8 +805,35 @@ async function initDashboard() {
         await realDataService.loadStocks(handleStockUpdate, handleProgress);
         await realDataService.loadMacroIndicator(handleMacroUpdate);
         await realDataService.loadCclHistory(handleCclHistoryUpdate);
+        await updateIolStatus();
     } else {
         container.innerHTML = "Error: Service not found. Check realData.js";
+    }
+}
+
+async function updateIolStatus() {
+    try {
+        const res = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status');
+        if (res.ok) {
+            const data = await res.json();
+            const badge = document.getElementById('iolStatusBadge');
+            const txt = document.getElementById('iolStatusText');
+            const bal = document.getElementById('iolBalanceText');
+            if (badge && txt && bal) {
+                txt.textContent = data.mode;
+                if (data.connected) {
+                    badge.style.borderColor = 'var(--accent-green)';
+                    txt.style.color = 'var(--accent-green)';
+                    bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS`;
+                } else {
+                    badge.style.borderColor = 'var(--accent-blue)';
+                    txt.style.color = 'var(--accent-blue)';
+                    bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS (Sim)`;
+                }
+            }
+        }
+    } catch(e) {
+        console.error("Error al actualizar estado de IOL:", e);
     }
 }
 
