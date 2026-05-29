@@ -78,6 +78,8 @@ window.lastBotExecution = 0; // Timestamp última ejecución
 window.botTestMode = false; // Modo Test (Agresivo)
 window.iolUsername = '';
 window.iolPassword = '';
+window.autoTradingLegacyEnabled = true;
+window.autoTradingChatGPTEnabled = true;
 
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
@@ -191,6 +193,16 @@ window.toggleAutoTrading = () => {
 
 window.updateAutoTradeUI = () => {
     const btn = document.getElementById('autoTradeBtn');
+    const label = document.getElementById('autoTradingLabel');
+    
+    if (label) {
+        if (window.iolUsername && window.iolUsername.trim() !== '') {
+            label.textContent = "Auto-Trading (Real)";
+        } else {
+            label.textContent = "Auto-Trading (Sim)";
+        }
+    }
+    
     if (btn) {
         if (window.autoTradingEnabled) {
             btn.style.backgroundColor = 'var(--accent-green)';
@@ -206,6 +218,8 @@ window.openBotSettings = () => {
     document.getElementById('botIntervalInput').value = window.botInterval;
     document.getElementById('botCapitalInput').value = window.simCapital;
     document.getElementById('botTestModeInput').checked = window.botTestMode;
+    document.getElementById('runLegacyInput').checked = window.autoTradingLegacyEnabled;
+    document.getElementById('runChatGPTInput').checked = window.autoTradingChatGPTEnabled;
     document.getElementById('botSettingsModal').style.display = 'flex';
 };
 
@@ -213,6 +227,8 @@ window.saveBotSettings = () => {
     const intervalVal = document.getElementById('botIntervalInput').value;
     const capitalVal = document.getElementById('botCapitalInput').value;
     const testModeVal = document.getElementById('botTestModeInput').checked;
+    const runLegacyVal = document.getElementById('runLegacyInput').checked;
+    const runChatGPTVal = document.getElementById('runChatGPTInput').checked;
     
     const interval = parseInt(intervalVal);
     const capital = parseFloat(capitalVal);
@@ -229,8 +245,10 @@ window.saveBotSettings = () => {
     window.botInterval = interval;
     window.simCapital = capital;
     window.botTestMode = testModeVal;
+    window.autoTradingLegacyEnabled = runLegacyVal;
+    window.autoTradingChatGPTEnabled = runChatGPTVal;
     
-    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}${testModeVal ? ' (MODO TEST ACTIVADO)' : ''}`, "info");
+    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}${testModeVal ? ' (MODO TEST)' : ''}. Legacy: ${runLegacyVal ? 'ON' : 'OFF'}, ChatGPT: ${runChatGPTVal ? 'ON' : 'OFF'}`, "info");
     document.getElementById('botSettingsModal').style.display = 'none';
     
     if (window.cloudSynced) {
@@ -722,7 +740,7 @@ function checkNotifications(force = false) {
         }
 
         // 2. Lógica de Auto-Trading: BOT LEGACY
-        if (window.autoTradingEnabled) {
+        if (window.autoTradingEnabled && window.autoTradingLegacyEnabled) {
             const autoPosLegacy = window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol);
             const legacyAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosLegacy, 'legacy');
             
@@ -754,14 +772,16 @@ function checkNotifications(force = false) {
                     }
                 }
             }
+        }
 
-            // 3. Lógica de Auto-Trading: BOT CHATGPT
+        // 3. Lógica de Auto-Trading: BOT CHATGPT
+        if (window.autoTradingEnabled && window.autoTradingChatGPTEnabled) {
             const autoPosChatGPT = window.autoPortfolioChatGPT.find(p => p.symbol === stock.symbol);
             const chatgptAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosChatGPT, 'openai');
             
             if (autoPosChatGPT) {
                 if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
-            } else if (!portfolioPos && !autoPosLegacy && shouldBotTrade) {
+            } else if (!portfolioPos && !window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol) && shouldBotTrade) {
                 // Validación técnica: En modo test somos permisivos
                 const chatgptTechOk = window.botTestMode ? { valid: true } : validateEntry(chatgptAnalysis, stock.symbol);
                 
@@ -1914,6 +1934,8 @@ onAuthStateChanged(auth, async (user) => {
                 if (d.closedTrades) closedTrades = d.closedTrades;
                 if (d.iolUsername) window.iolUsername = d.iolUsername;
                 if (d.iolPassword) window.iolPassword = d.iolPassword;
+                if (d.autoTradingLegacyEnabled !== undefined) window.autoTradingLegacyEnabled = d.autoTradingLegacyEnabled;
+                if (d.autoTradingChatGPTEnabled !== undefined) window.autoTradingChatGPTEnabled = d.autoTradingChatGPTEnabled;
             }
             await updateIolStatus();
         } catch(e) {
@@ -1927,6 +1949,7 @@ onAuthStateChanged(auth, async (user) => {
         
         // Cerrar sesión en el backend
         fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/logout`, { 
+            // Cerrar sesión en el backend
             method: 'POST',
             credentials: 'include'
         });
@@ -1949,6 +1972,8 @@ window.syncDataToFirebase = async function() {
                watchlist: watchlist,
                priceAlerts: window.priceAlerts,
                autoTradingEnabled: window.autoTradingEnabled,
+               autoTradingLegacyEnabled: window.autoTradingLegacyEnabled,
+               autoTradingChatGPTEnabled: window.autoTradingChatGPTEnabled,
                simCapital: window.simCapital,
                botInterval: window.botInterval,
                autoPortfolioLegacy: window.autoPortfolioLegacy,
