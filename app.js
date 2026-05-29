@@ -850,8 +850,13 @@ async function initDashboard() {
 
 async function updateIolStatus() {
     try {
+        const headers = {};
+        if (auth && auth.currentUser) {
+            headers['x-uid'] = auth.currentUser.uid;
+        }
         const res = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status', {
-            credentials: 'include'
+            credentials: 'include',
+            headers: headers
         });
         if (res.ok) {
             const data = await res.json();
@@ -1796,14 +1801,20 @@ onAuthStateChanged(auth, async (user) => {
         try {
             await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'x-uid': user.uid
+                },
                 body: JSON.stringify({ uid: user.uid }),
                 credentials: 'include'
             });
 
             // Cargar datos desde el Backend (que a su vez lee Firestore)
             const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
-                credentials: 'include'
+                credentials: 'include',
+                headers: {
+                    'x-uid': user.uid
+                }
             });
             if (response.ok) {
                 const d = await response.json();
@@ -1854,7 +1865,10 @@ window.syncDataToFirebase = async function() {
    try {
        await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
            method: 'POST',
-           headers: { 'Content-Type': 'application/json' },
+           headers: { 
+               'Content-Type': 'application/json',
+               'x-uid': auth.currentUser.uid
+           },
            credentials: 'include',
            body: JSON.stringify({
                portfolio: portfolio,
