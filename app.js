@@ -865,13 +865,23 @@ async function updateIolStatus() {
             if (badge && txt && bal) {
                 txt.textContent = data.mode;
                 if (data.connected) {
-                    badge.style.borderColor = 'var(--accent-green)';
-                    txt.style.color = 'var(--accent-green)';
-                    bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS`;
+                    if (data.error) {
+                        badge.style.borderColor = 'var(--accent-red)';
+                        txt.style.color = 'var(--accent-red)';
+                        bal.textContent = `Error de Conexión`;
+                        badge.title = `Error IOL: ${data.error}. Haz clic para reconfigurar.`;
+                        console.error("❌ Error de conexión con IOL:", data.error);
+                    } else {
+                        badge.style.borderColor = 'var(--accent-green)';
+                        txt.style.color = 'var(--accent-green)';
+                        bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS`;
+                        badge.title = "Conectado a InvertirOnline (Real). Haz clic para reconfigurar.";
+                    }
                 } else {
                     badge.style.borderColor = 'var(--accent-blue)';
                     txt.style.color = 'var(--accent-blue)';
                     bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS (Sim)`;
+                    badge.title = "Configurar cuenta de InvertirOnline (Simulado)";
                 }
             }
         }
