@@ -850,13 +850,12 @@ async function initDashboard() {
 
 async function updateIolStatus() {
     try {
-        const headers = {};
+        let url = 'https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status';
         if (auth && auth.currentUser) {
-            headers['x-uid'] = auth.currentUser.uid;
+            url += `?uid=${auth.currentUser.uid}`;
         }
-        const res = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status', {
-            credentials: 'include',
-            headers: headers
+        const res = await fetch(url, {
+            credentials: 'include'
         });
         if (res.ok) {
             const data = await res.json();
@@ -1799,22 +1798,18 @@ onAuthStateChanged(auth, async (user) => {
         
         // --- ESTABLECER SESIÓN EN EL BACKEND ---
         try {
-            await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session`, {
+            await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session?uid=${user.uid}`, {
                 method: 'POST',
                 headers: { 
-                    'Content-Type': 'application/json',
-                    'x-uid': user.uid
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ uid: user.uid }),
                 credentials: 'include'
             });
 
             // Cargar datos desde el Backend (que a su vez lee Firestore)
-            const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
-                credentials: 'include',
-                headers: {
-                    'x-uid': user.uid
-                }
+            const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${user.uid}`, {
+                credentials: 'include'
             });
             if (response.ok) {
                 const d = await response.json();
@@ -1863,11 +1858,10 @@ onAuthStateChanged(auth, async (user) => {
 window.syncDataToFirebase = async function() {
    if (!auth.currentUser) return;
    try {
-       await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data`, {
+       await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${auth.currentUser.uid}`, {
            method: 'POST',
            headers: { 
-               'Content-Type': 'application/json',
-               'x-uid': auth.currentUser.uid
+               'Content-Type': 'application/json'
            },
            credentials: 'include',
            body: JSON.stringify({
