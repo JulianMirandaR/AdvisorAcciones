@@ -247,6 +247,11 @@ window.openIolSettings = () => {
     }
     document.getElementById('iolUsernameInput').value = window.iolUsername || '';
     document.getElementById('iolPasswordInput').value = window.iolPassword || '';
+    const testResEl = document.getElementById('iolTestResult');
+    if (testResEl) {
+        testResEl.style.display = 'none';
+        testResEl.textContent = '';
+    }
     document.getElementById('iolSettingsModal').style.display = 'flex';
 };
 
@@ -272,6 +277,68 @@ window.saveIolSettings = async () => {
     }
     
     await updateIolStatus();
+};
+
+window.testIolConnection = async () => {
+    const usernameVal = document.getElementById('iolUsernameInput').value.trim();
+    const passwordVal = document.getElementById('iolPasswordInput').value;
+    
+    if (!usernameVal || !passwordVal) {
+        alert("Por favor completa los campos de usuario y contraseña.");
+        return;
+    }
+    
+    const testResEl = document.getElementById('iolTestResult');
+    if (!testResEl) return;
+    
+    testResEl.style.display = 'block';
+    testResEl.style.background = 'rgba(255, 255, 255, 0.1)';
+    testResEl.style.color = 'var(--text-primary)';
+    testResEl.style.border = '1px solid var(--border-color)';
+    testResEl.textContent = '🧪 Probando conexión con IOL...';
+    
+    try {
+        const response = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/test-iol-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: usernameVal, password: passwordVal })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.status === 200) {
+                testResEl.style.background = 'rgba(46, 204, 113, 0.1)';
+                testResEl.style.color = 'var(--accent-green)';
+                testResEl.style.border = '1px solid var(--accent-green)';
+                testResEl.textContent = '✅ ¡Autenticación exitosa! Las credenciales son correctas y tu cuenta está activa para operar.';
+            } else {
+                testResEl.style.background = 'rgba(231, 76, 60, 0.1)';
+                testResEl.style.color = 'var(--accent-red)';
+                testResEl.style.border = '1px solid var(--accent-red)';
+                
+                let errDesc = data.body || 'Error desconocido';
+                try {
+                    const parsed = JSON.parse(data.body);
+                    if (parsed.error_description) {
+                        errDesc = `${parsed.error}: ${parsed.error_description}`;
+                    }
+                } catch(e){}
+                
+                testResEl.textContent = `❌ Falló la autenticación (IOL Status ${data.status}): ${errDesc}`;
+            }
+        } else {
+            const text = await response.text();
+            testResEl.style.background = 'rgba(231, 76, 60, 0.1)';
+            testResEl.style.color = 'var(--accent-red)';
+            testResEl.style.border = '1px solid var(--accent-red)';
+            testResEl.textContent = `❌ Error de Servidor (Status ${response.status}): ${text}`;
+        }
+    } catch(e) {
+        testResEl.style.background = 'rgba(231, 76, 60, 0.1)';
+        testResEl.style.color = 'var(--accent-red)';
+        testResEl.style.border = '1px solid var(--accent-red)';
+        testResEl.textContent = `❌ Error de Red: ${e.message}`;
+    }
 };
 
 
