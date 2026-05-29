@@ -76,6 +76,8 @@ window.autoClosedTradesChatGPT = [];
 window.botInterval = 5; // Minutos entre ejecuciones
 window.lastBotExecution = 0; // Timestamp última ejecución
 window.botTestMode = false; // Modo Test (Agresivo)
+window.iolUsername = '';
+window.iolPassword = '';
 
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
@@ -235,6 +237,41 @@ window.saveBotSettings = () => {
         console.log("☁️ Sincronizando configuración con la nube...");
         window.syncDataToFirebase();
     }
+};
+
+window.openIolSettings = () => {
+    if (!window.cloudSynced) {
+        alert("🔒 Debes iniciar sesión en la plataforma primero para poder configurar de manera segura tu cuenta de InvertirOnline.");
+        window.openAuthModal();
+        return;
+    }
+    document.getElementById('iolUsernameInput').value = window.iolUsername || '';
+    document.getElementById('iolPasswordInput').value = window.iolPassword || '';
+    document.getElementById('iolSettingsModal').style.display = 'flex';
+};
+
+window.saveIolSettings = async () => {
+    const usernameVal = document.getElementById('iolUsernameInput').value.trim();
+    const passwordVal = document.getElementById('iolPasswordInput').value;
+    
+    if (!usernameVal || !passwordVal) {
+        alert("Por favor completa todos los campos.");
+        return;
+    }
+    
+    window.iolUsername = usernameVal;
+    window.iolPassword = passwordVal;
+    
+    document.getElementById('iolSettingsModal').style.display = 'none';
+    
+    window.addNotification(`🔑 Cuenta de InvertirOnline conectada. Intentando autenticación...`, "info");
+    
+    if (window.cloudSynced) {
+        console.log("☁️ Sincronizando credenciales de IOL con la nube...");
+        await window.syncDataToFirebase();
+    }
+    
+    await updateIolStatus();
 };
 
 
@@ -813,7 +850,9 @@ async function initDashboard() {
 
 async function updateIolStatus() {
     try {
-        const res = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status');
+        const res = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/iol-status', {
+            credentials: 'include'
+        });
         if (res.ok) {
             const data = await res.json();
             const badge = document.getElementById('iolStatusBadge');
@@ -1787,7 +1826,10 @@ onAuthStateChanged(auth, async (user) => {
                 if (d.lastBotExecution) window.lastBotExecution = d.lastBotExecution;
                 if (d.botTestMode !== undefined) window.botTestMode = d.botTestMode;
                 if (d.closedTrades) closedTrades = d.closedTrades;
+                if (d.iolUsername) window.iolUsername = d.iolUsername;
+                if (d.iolPassword) window.iolPassword = d.iolPassword;
             }
+            await updateIolStatus();
         } catch(e) {
             console.error("Error sincronizando sesión o cargando datos", e);
         }
@@ -1830,7 +1872,9 @@ window.syncDataToFirebase = async function() {
                unreadNotifs: window.unreadNotifs,
                lastBotExecution: window.lastBotExecution,
                botTestMode: window.botTestMode,
-               closedTrades: closedTrades
+               closedTrades: closedTrades,
+               iolUsername: window.iolUsername || '',
+               iolPassword: window.iolPassword || ''
            })
        });
    } catch(e) {
