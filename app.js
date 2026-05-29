@@ -859,6 +859,9 @@ async function updateIolStatus() {
         });
         if (res.ok) {
             const data = await res.json();
+            if (data.rawAccounts) {
+                console.log("💼 Cuentas de InvertirOnline de este usuario:", data.rawAccounts);
+            }
             const badge = document.getElementById('iolStatusBadge');
             const txt = document.getElementById('iolStatusText');
             const bal = document.getElementById('iolBalanceText');
