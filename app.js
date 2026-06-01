@@ -216,7 +216,6 @@ window.updateAutoTradeUI = () => {
 
 window.openBotSettings = () => {
     document.getElementById('botIntervalInput').value = window.botInterval;
-    document.getElementById('botCapitalInput').value = window.simCapital;
     
     document.getElementById('runLegacyInput').checked = window.autoTradingLegacyEnabled;
     document.getElementById('runChatGPTInput').checked = window.autoTradingChatGPTEnabled;
@@ -225,30 +224,23 @@ window.openBotSettings = () => {
 
 window.saveBotSettings = () => {
     const intervalVal = document.getElementById('botIntervalInput').value;
-    const capitalVal = document.getElementById('botCapitalInput').value;
     
     const runLegacyVal = document.getElementById('runLegacyInput').checked;
     const runChatGPTVal = document.getElementById('runChatGPTInput').checked;
     
     const interval = parseInt(intervalVal);
-    const capital = parseFloat(capitalVal);
     
     if (isNaN(interval) || interval < 1) {
         alert("Frecuencia inválida (mínimo 1 minuto)");
         return;
     }
-    if (isNaN(capital) || capital < 100) {
-        alert("Capital inválido (mínimo 100 U$D)");
-        return;
-    }
     
     window.botInterval = interval;
-    window.simCapital = capital;
     
     window.autoTradingLegacyEnabled = runLegacyVal;
     window.autoTradingChatGPTEnabled = runChatGPTVal;
     
-    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min, Capital U$D ${capital.toFixed(0)}${testModeVal ? ' (MODO TEST)' : ''}. Legacy: ${runLegacyVal ? 'ON' : 'OFF'}, ChatGPT: ${runChatGPTVal ? 'ON' : 'OFF'}`, "info");
+    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min. Legacy: ${runLegacyVal ? 'ON' : 'OFF'}, ChatGPT: ${runChatGPTVal ? 'ON' : 'OFF'}`, "info");
     document.getElementById('botSettingsModal').style.display = 'none';
     
     if (window.cloudSynced) {
@@ -524,161 +516,7 @@ function validateEntry(analysis, symbol) {
     return { valid: true };
 }
 
-function executeTrade(stock, analysis, executionScore, reasonStr, botType = 'chatgpt') {
-    console.log(`[STAGE 1] Iniciando executeTrade para ${stock.symbol} (Bot: ${botType})`);
-    try {
-        const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
-        const storageKey = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
 
-        console.log(`[STAGE 2] Verificando límite de posiciones. Actuales: ${portfolioArr.length}`);
-        // Control de Exposición (Máximo 5 operaciones activas por bot)
-        const MAX_POSITIONS = 5;
-        if (portfolioArr.length >= MAX_POSITIONS) {
-            console.log(`🚫 Bot ${botType}: Límite de posiciones alcanzado (${MAX_POSITIONS})`);
-            return false;
-        }
-
-        console.log(`[STAGE 3] Calculando tamaño de posición`);
-        // Position Sizing: 20% del capital total definido por el usuario
-        const POSITION_SIZE_PCT = 0.20;
-        if (!window.simCapital || isNaN(window.simCapital)) {
-            console.error(`❌ Error: window.simCapital no está definido o es inválido: ${window.simCapital}, usando fallback 10000`);
-            window.simCapital = 10000;
-        }
-        const usdTradeAmount = window.simCapital * POSITION_SIZE_PCT;
-        
-        const ccl = (typeof globalMacroData !== 'undefined' && globalMacroData && globalMacroData.ccl) ? parseFloat(globalMacroData.ccl) : 1200;
-
-        console.log(`[STAGE 4] Verificando capital disponible (Límite de Inversión) en USD`);
-        // Verificar si hay capital suficiente (Límite de Inversión normalizado a USD)
-        const investedLegacy = window.autoPortfolioLegacy.reduce((s, p) => {
-            const valNominal = p.price * p.qty;
-            const isArgPos = p.symbol && p.symbol.endsWith('.BA');
-            const valUSD = isArgPos ? (valNominal / ccl) : valNominal;
-            return s + (isNaN(valUSD) ? 0 : valUSD);
-        }, 0);
-        
-        const investedChatGPT = window.autoPortfolioChatGPT.reduce((s, p) => {
-            const valNominal = p.price * p.qty;
-            const isArgPos = p.symbol && p.symbol.endsWith('.BA');
-            const valUSD = isArgPos ? (valNominal / ccl) : valNominal;
-            return s + (isNaN(valUSD) ? 0 : valUSD);
-        }, 0);
-        
-        const invested = investedLegacy + investedChatGPT;
-        
-        console.log(`[STAGE 4b] Invested: U$D ${invested.toFixed(2)}, Required: U$D ${usdTradeAmount.toFixed(2)}, SimCapital: U$D ${window.simCapital}`);
-        if (invested + usdTradeAmount > window.simCapital) {
-            console.warn(`🛑 Bot ${botType}: Límite de inversión alcanzado. Requerido: ${usdTradeAmount.toFixed(2)}, Disponible: ${(window.simCapital - invested).toFixed(2)}`);
-            return false;
-        }
-
-        console.log(`[STAGE 5] Preparando datos de moneda y cantidad. 💸 Bot ${botType}: Iniciando compra de ${stock.symbol} por aprox. U$D ${usdTradeAmount.toFixed(2)}`);
-        const isArg = stock.symbol.endsWith('.BA');
-        
-        // Si la acción se compra en pesos, adaptamos la magnitud del capital usando el tipo de cambio
-        const tradeAmountNominal = isArg ? (usdTradeAmount * ccl) : usdTradeAmount;
-        
-        if (!stock.price || isNaN(stock.price) || stock.price <= 0) {
-            console.error(`❌ Error: Precio de la acción inválido: ${stock.price}`);
-            return false;
-        }
-        
-        const qty = tradeAmountNominal / stock.price;
-        
-        console.log(`[STAGE 6] Disparando notificación de compra`);
-        const currStr = isArg ? 'AR$' : 'U$D';
-        const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
-        window.addNotification(`${botName}: COMPRANDO ${qty.toFixed(2)} reps de ${stock.symbol} por ${currStr} ${tradeAmountNominal.toFixed(2)} (${reasonStr} | Score: ${executionScore})`, 'buy', stock.symbol);
-        
-        portfolioArr.push({
-            symbol: stock.symbol,
-            price: parseFloat(stock.price),
-            highestPrice: parseFloat(stock.price),
-            qty: qty,
-            takenProfit: false,
-            executionScore: executionScore,
-            entryReason: reasonStr,
-            marketCondition: analysis.contexto_mercado || 'Desconocido',
-            botType: botType
-        });
-        
-        if (window.cloudSynced) window.syncDataToFirebase();
-        console.log(`✅ [STAGE 8] Compra exitosa en Bot ${botType}. Portfolio actualizado.`);
-        return true;
-    } catch (error) {
-        console.error(`❌ Error crítico en executeTrade para ${stock.symbol} (Bot ${botType}):`, error);
-        return false;
-    }
-}
-
-function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
-    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
-    const autoPosIndex = portfolioArr.findIndex(p => p.symbol === stock.symbol);
-    if (autoPosIndex === -1) return false;
-    
-    const autoPos = portfolioArr[autoPosIndex];
-    let sold = false;
-    let partialSale = false;
-    let sellReason = '';
-
-    const currentPrice = parseFloat(stock.price);
-    
-    // Tracker: Trailing Stop progresivo (5%)
-    if (currentPrice > autoPos.highestPrice) {
-        autoPos.highestPrice = currentPrice;
-    }
-    const trailingStopPct = 0.05;
-    const trailingStopPrice = autoPos.highestPrice * (1 - trailingStopPct);
-
-    // Salida por debilidad analítica general (< 4 score)
-    if (analysis.score < 4) {
-        sold = true;
-        sellReason = `Debilidad detectada (Score general: ${analysis.score})`;
-    } 
-    // Salida por Trailing Stop Real (Dinámico de 5%)
-    else if (currentPrice < trailingStopPrice) {
-        sold = true;
-        sellReason = `Trailing Stop (5%) ejecutado. Pico histórico: $${autoPos.highestPrice.toFixed(2)}`;
-    } 
-    // Salidas por transiciones a Venta del Core Engine
-    else if ((analysis.signal.includes('VENTA') || analysis.signal.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
-        sold = true;
-        sellReason = `Señal técnica de ${analysis.signal}`;
-    } 
-    // Venta Seguridad Máxima (Hard Stop estático)
-    else if (analysis.actionFlag === 'STOP_LOSS') {
-        sold = true;
-        sellReason = "Stop Loss de seguridad portafolio";
-    } 
-    // FASE 6 - Take Profit (Salida Parcial)
-    else if (analysis.actionFlag === 'TAKE_PROFIT') {
-        if (!autoPos.takenProfit) {
-            autoPos.qty = autoPos.qty / 2; // Cierra 50%
-            autoPos.takenProfit = true;
-            const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
-            window.addNotification(`${botName}: TAKE PROFIT PARCIAL (50%) en ${stock.symbol}`, 'sell', stock.symbol);
-            partialSale = true;
-        }
-    }
-
-    if (sold) {
-        if (window.autoTradingEnabled) {
-            const botName = botType === 'legacy' ? '🤖 Legacy' : '🤖 ChatGPT';
-            window.addNotification(`${botName}: VENDIENDO ${stock.symbol} - ${sellReason}`, 'sell', stock.symbol);
-            window.removeFromAutoPortfolio(autoPosIndex, sellReason, analysis.contexto_mercado, botType);
-        }
-        return true; 
-    }
-    
-    // Si modificamos tamaño (Take Profit) o actualizamos highestPrice, regresamos true
-    if (partialSale || currentPrice === autoPos.highestPrice) {
-        if (window.cloudSynced) window.syncDataToFirebase();
-        return true;
-    }
-    
-    return false;
-}
 // ------------------------------
 
 window.checkNotifications = checkNotifications;
@@ -689,7 +527,6 @@ function checkNotifications(force = false) {
     console.log(`[DEBUG] Market Condition: ${marketCondition} (VIX: ${vix})`);
     
     let hasChanges = false;
-    let hasBotChanges = false;
     
     if (!globalStocksData || globalStocksData.length === 0) {
         console.warn("[DEBUG] globalStocksData está vacío o no definido.");
@@ -713,76 +550,6 @@ function checkNotifications(force = false) {
             }
             if (userAnalysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
                 window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
-            }
-        }
-
-        // 2. Lógica de Auto-Trading: BOT LEGACY
-        if (window.autoTradingEnabled && window.autoTradingLegacyEnabled) {
-            const autoPosLegacy = window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol);
-            const legacyAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosLegacy, 'legacy');
-            
-            if (autoPosLegacy) {
-                if (manageOpenPositions(stock, legacyAnalysis, prevSignal, 'legacy')) hasBotChanges = true;
-            } else if (!portfolioPos && shouldBotTrade) {
-                // Validación técnica: En modo test somos permisivos
-                const legacyTechOk = validateEntry(legacyAnalysis, stock.symbol); 
-                
-                if (legacyTechOk.valid) {
-                    const aiData = (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[stock.symbol]) ? window.aiPredictionCacheLegacy[stock.symbol] : null;
-                    
-                    const probThreshold = 0.60;
-                    const scoreThreshold = 7;
-
-                    if (aiData && aiData.usable && aiData.probability > probThreshold) { 
-                        const execScore = calculateExecutionScore(stock, legacyAnalysis, aiData);
-                        console.log(`[DEBUG] Candidate Legacy ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
-                        if (execScore >= scoreThreshold) { 
-                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy", 'legacy')) hasBotChanges = true;
-                        } else if (false) {
-                            console.log(`[DEBUG] Candidate Legacy ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
-                        }
-                    } else if (!aiData && (legacyAnalysis.score >= 7)) {
-                        console.log(`🤖 Bot Legacy: ${stock.symbol} solicitando IA...`);
-                        if (window.requestAILegacyHeadless) {
-                            window.requestAILegacyHeadless(stock.symbol);
-                        }
-                    }
-                }
-            }
-        }
-
-        // 3. Lógica de Auto-Trading: BOT CHATGPT
-        if (window.autoTradingEnabled && window.autoTradingChatGPTEnabled) {
-            const autoPosChatGPT = window.autoPortfolioChatGPT.find(p => p.symbol === stock.symbol);
-            const chatgptAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, autoPosChatGPT, 'openai');
-            
-            if (autoPosChatGPT) {
-                if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
-            } else if (!portfolioPos && !window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol) && shouldBotTrade) {
-                // Validación técnica: En modo test somos permisivos
-                const chatgptTechOk = validateEntry(chatgptAnalysis, stock.symbol);
-                
-                if (chatgptTechOk.valid) {
-                    const aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[stock.symbol]) ? window.aiPredictionCacheOpenAI[stock.symbol] : null;
-                    
-                    const probThreshold = 0.50;
-                    const scoreThreshold = 5;
-
-                    if (aiData && aiData.usable && aiData.probability > probThreshold) { 
-                        const execScore = calculateExecutionScore(stock, chatgptAnalysis, aiData);
-                        console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
-                        if (execScore >= scoreThreshold) { 
-                            if (executeTrade(stock, chatgptAnalysis, execScore, "Setup Técnico + OpenAI", 'chatgpt')) hasBotChanges = true;
-                        } else if (false) {
-                            console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
-                        }
-                    } else if (!aiData && (chatgptAnalysis.score >= 6)) {
-                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} solicitando IA...`);
-                        if (window.requestAIAnalysisHeadless) {
-                            window.requestAIAnalysisHeadless(stock.symbol);
-                        }
-                    }
-                }
             }
         }
 
@@ -2951,4 +2718,5 @@ window.disconnectIol = async () => {
     document.getElementById("iolSettingsModal").style.display = "none";
     window.addNotification("? Cuenta de InvertirOnline desconectada.", "sell");
 };
+
 
