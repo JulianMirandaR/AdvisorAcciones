@@ -75,7 +75,7 @@ window.autoPortfolioChatGPT = [];
 window.autoClosedTradesChatGPT = [];
 window.botInterval = 5; // Minutos entre ejecuciones
 window.lastBotExecution = 0; // Timestamp última ejecución
-window.botTestMode = false; // Modo Test (Agresivo)
+
 window.iolUsername = '';
 window.iolPassword = '';
 window.autoTradingLegacyEnabled = true;
@@ -217,7 +217,7 @@ window.updateAutoTradeUI = () => {
 window.openBotSettings = () => {
     document.getElementById('botIntervalInput').value = window.botInterval;
     document.getElementById('botCapitalInput').value = window.simCapital;
-    document.getElementById('botTestModeInput').checked = window.botTestMode;
+    
     document.getElementById('runLegacyInput').checked = window.autoTradingLegacyEnabled;
     document.getElementById('runChatGPTInput').checked = window.autoTradingChatGPTEnabled;
     document.getElementById('botSettingsModal').style.display = 'flex';
@@ -226,7 +226,7 @@ window.openBotSettings = () => {
 window.saveBotSettings = () => {
     const intervalVal = document.getElementById('botIntervalInput').value;
     const capitalVal = document.getElementById('botCapitalInput').value;
-    const testModeVal = document.getElementById('botTestModeInput').checked;
+    
     const runLegacyVal = document.getElementById('runLegacyInput').checked;
     const runChatGPTVal = document.getElementById('runChatGPTInput').checked;
     
@@ -244,7 +244,7 @@ window.saveBotSettings = () => {
     
     window.botInterval = interval;
     window.simCapital = capital;
-    window.botTestMode = testModeVal;
+    
     window.autoTradingLegacyEnabled = runLegacyVal;
     window.autoTradingChatGPTEnabled = runChatGPTVal;
     
@@ -748,24 +748,24 @@ function checkNotifications(force = false) {
                 if (manageOpenPositions(stock, legacyAnalysis, prevSignal, 'legacy')) hasBotChanges = true;
             } else if (!portfolioPos && shouldBotTrade) {
                 // Validación técnica: En modo test somos permisivos
-                const legacyTechOk = window.botTestMode ? { valid: true } : validateEntry(legacyAnalysis, stock.symbol); 
+                const legacyTechOk = validateEntry(legacyAnalysis, stock.symbol); 
                 
                 if (legacyTechOk.valid) {
                     const aiData = (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[stock.symbol]) ? window.aiPredictionCacheLegacy[stock.symbol] : null;
                     
-                    const probThreshold = window.botTestMode ? 0.10 : 0.60;
-                    const scoreThreshold = window.botTestMode ? 1 : 7;
+                    const probThreshold = 0.60;
+                    const scoreThreshold = 7;
 
                     if (aiData && aiData.usable && aiData.probability > probThreshold) { 
                         const execScore = calculateExecutionScore(stock, legacyAnalysis, aiData);
                         console.log(`[DEBUG] Candidate Legacy ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
                         if (execScore >= scoreThreshold) { 
-                            if (executeTrade(stock, legacyAnalysis, execScore, window.botTestMode ? "MODO TEST: Compra Forzada" : "Setup Técnico + IA Legacy", 'legacy')) hasBotChanges = true;
-                        } else if (window.botTestMode) {
+                            if (executeTrade(stock, legacyAnalysis, execScore, "Setup Técnico + IA Legacy", 'legacy')) hasBotChanges = true;
+                        } else if (false) {
                             console.log(`[DEBUG] Candidate Legacy ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
                         }
-                    } else if (!aiData && (window.botTestMode || legacyAnalysis.score >= 7)) {
-                        console.log(`🤖 Bot Legacy: ${stock.symbol} solicitando IA${window.botTestMode ? ' (Modo Test)' : ''}...`);
+                    } else if (!aiData && (legacyAnalysis.score >= 7)) {
+                        console.log(`🤖 Bot Legacy: ${stock.symbol} solicitando IA...`);
                         if (window.requestAILegacyHeadless) {
                             window.requestAILegacyHeadless(stock.symbol);
                         }
@@ -783,24 +783,24 @@ function checkNotifications(force = false) {
                 if (manageOpenPositions(stock, chatgptAnalysis, prevSignal, 'chatgpt')) hasBotChanges = true;
             } else if (!portfolioPos && !window.autoPortfolioLegacy.find(p => p.symbol === stock.symbol) && shouldBotTrade) {
                 // Validación técnica: En modo test somos permisivos
-                const chatgptTechOk = window.botTestMode ? { valid: true } : validateEntry(chatgptAnalysis, stock.symbol);
+                const chatgptTechOk = validateEntry(chatgptAnalysis, stock.symbol);
                 
                 if (chatgptTechOk.valid) {
                     const aiData = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[stock.symbol]) ? window.aiPredictionCacheOpenAI[stock.symbol] : null;
                     
-                    const probThreshold = window.botTestMode ? 0.10 : 0.50;
-                    const scoreThreshold = window.botTestMode ? 1 : 5;
+                    const probThreshold = 0.50;
+                    const scoreThreshold = 5;
 
                     if (aiData && aiData.usable && aiData.probability > probThreshold) { 
                         const execScore = calculateExecutionScore(stock, chatgptAnalysis, aiData);
                         console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol}: Score=${execScore}, AI Prob=${aiData.probability.toFixed(2)}`);
                         if (execScore >= scoreThreshold) { 
-                            if (executeTrade(stock, chatgptAnalysis, execScore, window.botTestMode ? "MODO TEST: Compra Forzada" : "Setup Técnico + OpenAI", 'chatgpt')) hasBotChanges = true;
-                        } else if (window.botTestMode) {
+                            if (executeTrade(stock, chatgptAnalysis, execScore, "Setup Técnico + OpenAI", 'chatgpt')) hasBotChanges = true;
+                        } else if (false) {
                             console.log(`[DEBUG] Candidate ChatGPT ${stock.symbol} RECHAZADO por Score insuficiente (${execScore} < ${scoreThreshold})`);
                         }
-                    } else if (!aiData && (window.botTestMode || chatgptAnalysis.score >= 6)) {
-                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} solicitando IA${window.botTestMode ? ' (Modo Test)' : ''}...`);
+                    } else if (!aiData && (chatgptAnalysis.score >= 6)) {
+                        console.log(`🤖 Bot ChatGPT: ${stock.symbol} solicitando IA...`);
                         if (window.requestAIAnalysisHeadless) {
                             window.requestAIAnalysisHeadless(stock.symbol);
                         }
@@ -1930,7 +1930,7 @@ onAuthStateChanged(auth, async (user) => {
                 if (d.priceAlerts) window.priceAlerts = d.priceAlerts;
                 if (d.unreadNotifs) window.unreadNotifs = d.unreadNotifs;
                 if (d.lastBotExecution) window.lastBotExecution = d.lastBotExecution;
-                if (d.botTestMode !== undefined) window.botTestMode = d.botTestMode;
+                
                 if (d.closedTrades) closedTrades = d.closedTrades;
                 if (d.iolUsername) window.iolUsername = d.iolUsername;
                 if (d.iolPassword) window.iolPassword = d.iolPassword;
@@ -1984,7 +1984,7 @@ window.syncDataToFirebase = async function() {
                lastKnownSignals: window.lastKnownSignals,
                unreadNotifs: window.unreadNotifs,
                lastBotExecution: window.lastBotExecution,
-               botTestMode: window.botTestMode,
+               
                closedTrades: closedTrades,
                iolUsername: window.iolUsername || '',
                iolPassword: window.iolPassword || ''
@@ -2960,3 +2960,4 @@ window.executeBacktestUI = () => {
 
     }, 100);
 };
+

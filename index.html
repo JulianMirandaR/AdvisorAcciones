@@ -65,7 +65,7 @@
                     <button class="tab-btn" data-term="bot_chatgpt_portfolio" style="border: 1px solid var(--accent-green); color: var(--accent-green);">Bot ChatGPT</button>
                     <button class="tab-btn" data-term="bot_historial" style="border: 1px solid var(--text-secondary); color: var(--text-secondary);">Historial Bots</button>
                     <div style="display: flex; align-items: center; margin-left: 1rem; padding: 0.5rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--accent-blue); cursor: pointer;" onclick="window.toggleAutoTrading()">
-                        <span id="autoTradingLabel" style="font-size: 0.8rem; font-weight: bold; margin-right: 0.5rem; color: var(--text-primary);">Auto-Trading (Sim)</span>
+                        <span id="autoTradingLabel" style="font-size: 0.8rem; font-weight: bold; margin-right: 0.5rem; color: var(--text-primary);">Auto-Trading</span>
                         <div id="autoTradeBtn" style="width: 12px; height: 12px; border-radius: 50%; background-color: var(--accent-red); box-shadow: 0 0 5px var(--accent-red);"></div>
                     </div>
                     <button onclick="window.openBotSettings()" style="margin-left: 0.5rem; background: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.4rem; cursor: pointer; color: var(--text-secondary);" title="Configuración del Bot">⚙️</button>
@@ -289,10 +289,7 @@
                     </div>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; background: rgba(231, 76, 60, 0.1); padding: 0.8rem; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.3);">
-                    <input type="checkbox" id="botTestModeInput" style="width: 18px; height: 18px; cursor: pointer;">
-                    <label for="botTestModeInput" style="font-size: 0.85rem; color: var(--accent-red); font-weight: bold; cursor: pointer;">🔥 Activar Modo Test (Compra Agresiva)</label>
-                </div>
+                
                 
                 <button onclick="window.saveBotSettings()" style="background: var(--accent-blue); color: white; padding: 0.8rem 2rem; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; width: 100%;">Guardar Configuración</button>
             </div>
