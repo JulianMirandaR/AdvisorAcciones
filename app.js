@@ -684,32 +684,9 @@ function manageOpenPositions(stock, analysis, prevSignal, botType = 'chatgpt') {
 window.checkNotifications = checkNotifications;
 function checkNotifications(force = false) {
     console.log(`[DEBUG] checkNotifications(force=${force}) - autoTradingEnabled: ${window.autoTradingEnabled}`);
-    let shouldBotTrade = force;
-    // Si el auto-trading está activo, verificar frecuencia
-    if (window.autoTradingEnabled && !shouldBotTrade) {
-        const now = Date.now();
-        const lastExec = window.lastBotExecution || 0;
-        const elapsed = now - lastExec;
-        const required = (window.botInterval || 5) * 60 * 1000;
-        
-        console.log(`[DEBUG] Interval check: elapsed=${(elapsed/1000/60).toFixed(2)} min, required=${(required/1000/60).toFixed(2)} min`);
-        
-        if (elapsed < required) {
-            const remaining = Math.ceil((required - elapsed) / 1000 / 60);
-            console.log(`🤖 Bot en espera. Próximo chequeo en ${remaining} minutos.`);
-        } else {
-            console.log("🤖 Ejecutando ciclo de Auto-Trading...");
-            shouldBotTrade = true;
-            window.lastBotExecution = now;
-            if (window.cloudSynced) window.syncDataToFirebase();
-        }
-    } else if (window.autoTradingEnabled && force) {
-        console.log("🤖 Procesando resultado de análisis autónomo (FORCE=TRUE)...");
-    }
-
     const vix = (globalMacroData && globalMacroData.vix) ? globalMacroData.vix : 25;
     const marketCondition = getMarketCondition(vix);
-    console.log(`[DEBUG] Market Condition: ${marketCondition} (VIX: ${vix}), shouldBotTrade: ${shouldBotTrade}`);
+    console.log(`[DEBUG] Market Condition: ${marketCondition} (VIX: ${vix})`);
     
     let hasChanges = false;
     let hasBotChanges = false;
@@ -849,12 +826,7 @@ function checkNotifications(force = false) {
         if(window.cloudSynced) window.syncDataToFirebase();
     }
     
-    if (hasBotChanges) {
-        if (window.cloudSynced) window.syncDataToFirebase();
-        if (currentTerm === 'bot_legacy_portfolio' || currentTerm === 'bot_chatgpt_portfolio') {
-            renderPortfolio(currentTerm === 'bot_legacy_portfolio' ? 'legacy' : 'chatgpt');
-        }
-    }
+
 }
 // ---------------------------------
 
@@ -966,12 +938,16 @@ async function updateIolStatus() {
                         txt.style.color = 'var(--accent-green)';
                         bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS`;
                         badge.title = "Conectado a InvertirOnline (Real). Haz clic para reconfigurar.";
+                        if(document.getElementById("iolConnectedView")) document.getElementById("iolConnectedView").style.display = "block";
+                        if(document.getElementById("iolSettingsForm")) document.getElementById("iolSettingsForm").style.display = "none";
                     }
                 } else {
                     badge.style.borderColor = 'var(--accent-blue)';
                     txt.style.color = 'var(--accent-blue)';
                     bal.textContent = `$${data.balanceARS.toLocaleString('es-AR')} ARS (Sim)`;
                     badge.title = "Configurar cuenta de InvertirOnline (Simulado)";
+                    if(document.getElementById("iolConnectedView")) document.getElementById("iolConnectedView").style.display = "none";
+                    if(document.getElementById("iolSettingsForm")) document.getElementById("iolSettingsForm").style.display = "block";
                 }
             }
         }
@@ -2959,5 +2935,20 @@ window.executeBacktestUI = () => {
         });
 
     }, 100);
+};
+
+
+
+
+
+window.disconnectIol = async () => {
+    window.iolUsername = "";
+    window.iolPassword = "";
+    if (window.cloudSynced) {
+        await window.syncDataToFirebase();
+    }
+    await updateIolStatus();
+    document.getElementById("iolSettingsModal").style.display = "none";
+    window.addNotification("? Cuenta de InvertirOnline desconectada.", "sell");
 };
 
