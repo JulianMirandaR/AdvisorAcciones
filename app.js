@@ -1570,6 +1570,7 @@ window.handleAuthSubmit = async function() {
         }
         document.getElementById('authModal').style.display = 'none';
     } catch(err) {
+        console.error("❌ Firebase Auth Error Details:", err, "Code:", err.code, "Message:", err.message);
         if (err.code === 'auth/invalid-login-credentials' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
             errorEl.innerText = "Error: Credenciales inválidas. Verifica tu contraseña o elige 'Crear Cuenta' si eres nuevo.";
         } else if (err.code === 'auth/email-already-in-use') {
