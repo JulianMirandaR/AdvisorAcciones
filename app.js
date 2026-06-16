@@ -917,10 +917,28 @@ function createCardHTML(item) {
         setupHtml = `<div style="margin-top:0.5rem;"><span style="background: var(--accent-blue); color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 0 8px var(--accent-blue);">🔥 SETUP DE ALTA PROBABILIDAD (${analysis.setupDetected.toUpperCase()})</span></div>`;
     }
 
-    // Mock Earnings logic based on symbol hash
-    const hashCode = s => s.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0);
-    const daysToEarnings = Math.abs(hashCode(data.symbol)) % 60;
-    const earningsHtml = daysToEarnings < 15 ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">⚠️ Próximo Reporte de Ganancias en ${daysToEarnings} días</span></div>` : '';
+    // Real Earnings logic
+    let earningsHtml = '';
+    if (data.earningsDate) {
+        const today = new Date();
+        const eDate = new Date(data.earningsDate);
+        const diffTime = eDate - today;
+        const daysToEarnings = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (daysToEarnings >= 0 && daysToEarnings < 15) {
+            earningsHtml += `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;" title="Fecha del balance: ${data.earningsDate}">⚠️ Balance: Próximo Reporte en ${daysToEarnings} días (${data.earningsDate})</span></div>`;
+        } else if (daysToEarnings >= 15) {
+            earningsHtml += `<div style="margin-top:0.5rem;"><span style="background: var(--hover-bg); border: 1px solid var(--border-color); color: var(--text-secondary); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;" title="Fecha del balance: ${data.earningsDate}">📅 Balance: ${data.earningsDate} (${daysToEarnings} días)</span></div>`;
+        }
+    }
+    
+    if (data.latestEarnings) {
+        const le = data.latestEarnings;
+        const color = le.status === 'BEAT' ? 'var(--accent-green)' : 'var(--accent-red)';
+        const sign = le.surprisePct >= 0 ? '+' : '';
+        const pctText = le.surprisePct != null ? ` (${sign}${le.surprisePct.toFixed(2)}%)` : '';
+        earningsHtml += `<div style="margin-top:0.5rem;"><span style="background: var(--hover-bg); border: 1px solid var(--border-color); color: var(--text-primary); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold;">📊 Último Balance (${le.date}): <span style="color:${color}; font-weight:bold;">${le.status}</span>${pctText}</span></div>`;
+    }
 
     card.innerHTML = `
         <div class="card-header" style="margin-bottom: 0;">
