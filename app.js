@@ -1605,6 +1605,8 @@ window.handleAuthSubmit = async function() {
             errorEl.innerText = "Error: Credenciales inválidas. Verifica tu contraseña o elige 'Crear Cuenta' si eres nuevo.";
         } else if (err.code === 'auth/email-already-in-use') {
             errorEl.innerText = "Error: Este correo ya tiene una cuenta. Haz clic en 'Ingresar'.";
+        } else if (err.code === 'auth/too-many-requests') {
+            errorEl.innerText = "Error: Demasiados intentos fallidos. Tu cuenta ha sido bloqueada temporalmente por seguridad. Puedes usar '¿Olvidaste tu contraseña?' para restablecerla o esperar unos minutos.";
         } else {
             errorEl.innerText = "Error: " + err.message;
         }
