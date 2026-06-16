@@ -2,7 +2,7 @@
 // (Note: `stocks` array and `generateStockData` removed as requested)
 import { RealDataService, auth, db } from './realData.js';
 // mlModel.js is now handled by uiFeatures.js
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
 import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
@@ -1540,18 +1540,47 @@ window.openAuthModal = function() {
 };
 
 window.toggleAuthMode = function() {
+    const forgotLink = document.getElementById('authForgotLink');
     if (window.authMode === 'login') {
         window.authMode = 'register';
         document.getElementById('authModalTitle').innerText = 'Crear Cuenta';
         document.getElementById('authSubmitBtn').innerText = 'Registrarse';
         document.getElementById('authSwitchText').innerText = '¿Ya tienes cuenta?';
         document.getElementById('authSwitchLink').innerText = 'Ingresar';
+        if (forgotLink) forgotLink.style.display = 'none';
     } else {
         window.authMode = 'login';
         document.getElementById('authModalTitle').innerText = 'Iniciar Sesión';
         document.getElementById('authSubmitBtn').innerText = 'Ingresar';
         document.getElementById('authSwitchText').innerText = '¿No tienes cuenta?';
         document.getElementById('authSwitchLink').innerText = 'Crear Cuenta';
+        if (forgotLink) forgotLink.style.display = 'inline-block';
+    }
+};
+
+window.handleForgotPassword = async function() {
+    const email = document.getElementById('authEmail').value;
+    const errorEl = document.getElementById('authErrorMsg');
+    
+    if (!email) {
+        errorEl.innerText = "Por favor, ingresa tu correo electrónico en el campo superior para enviarte el enlace de recuperación.";
+        errorEl.style.color = "var(--accent-red)";
+        errorEl.style.display = 'block';
+        return;
+    }
+    
+    errorEl.style.display = 'none';
+    
+    try {
+        await sendPasswordResetEmail(auth, email);
+        errorEl.innerText = "¡Enlace enviado! Revisa tu bandeja de entrada (y correo no deseado/spam) para restablecer tu contraseña.";
+        errorEl.style.color = "var(--accent-green)";
+        errorEl.style.display = 'block';
+    } catch(err) {
+        console.error("❌ Error al restablecer contraseña:", err);
+        errorEl.innerText = "Error: " + err.message;
+        errorEl.style.color = "var(--accent-red)";
+        errorEl.style.display = 'block';
     }
 };
 
@@ -1561,6 +1590,7 @@ window.handleAuthSubmit = async function() {
     const errorEl = document.getElementById('authErrorMsg');
     
     errorEl.style.display = 'none';
+    errorEl.style.color = "var(--accent-red)"; // Restablecer color de error
     
     try {
         if (window.authMode === 'login') {
