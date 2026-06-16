@@ -1570,7 +1570,7 @@ window.handleAuthSubmit = async function() {
         }
         document.getElementById('authModal').style.display = 'none';
     } catch(err) {
-        if (err.code === 'auth/invalid-login-credentials' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        if (err.code === 'auth/invalid-login-credentials' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
             errorEl.innerText = "Error: Credenciales inválidas. Verifica tu contraseña o elige 'Crear Cuenta' si eres nuevo.";
         } else if (err.code === 'auth/email-already-in-use') {
             errorEl.innerText = "Error: Este correo ya tiene una cuenta. Haz clic en 'Ingresar'.";
