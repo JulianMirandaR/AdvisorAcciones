@@ -1,104 +1,7 @@
-import { runAIPrediction } from './mlModel.js?v=2.6';
+import { auth } from './realData.js';
 
 // Inicializar caches de predicciones por separado
-window.aiPredictionCacheLegacy = window.aiPredictionCacheLegacy || {};
 window.aiPredictionCacheOpenAI = window.aiPredictionCacheOpenAI || {};
-
-export async function handlePredictAILegacy(symbol, globalStocksData, callbackRefreshUI) {
-    const stockData = globalStocksData.find(s => s.symbol === symbol);
-    if (!stockData) return;
-    
-    const btn = document.getElementById(`btn-ai-${symbol}`);
-    const originalText = btn ? btn.innerHTML : '';
-
-    if (window.aiPredictionCacheLegacy[symbol]) {
-        callbackRefreshUI();
-        return;
-    }
-
-    // --- LEER PREDICCIÓN PRE-CALCULADA DE FIRESTORE (RECOMENDADO) ---
-    if (stockData.aiPredictionLegacy && !stockData.aiPredictionLegacy.error) {
-        window.aiPredictionCacheLegacy[symbol] = stockData.aiPredictionLegacy;
-        const result = stockData.aiPredictionLegacy;
-
-        const popText = `🤖 IA PREDICT LEGACY (PRE-CALCULADA | ${symbol})
-----------------------------------
-${result.thought || 'Análisis basado en patrones históricos'}
-----------------------------------
-📊 Probabilidad: ${(result.probability * 100).toFixed(1)}%
-🎯 Confianza: ${result.confidence.toFixed(1)}/100
-⚠️ Incertidumbre: ${(result.uncertainty * 100).toFixed(1)}%
-
-🧠 Interpretación:
-${interpretAI(result)}
-`;
-        alert(popText);
-        callbackRefreshUI();
-        return;
-    }
-
-    // Fallback: Entrenar en navegador si no está pre-calculado
-    if (btn) {
-        btn.innerHTML = '⚙️ Pensando (Legacy)...';
-        btn.disabled = true;
-    }
-    
-    try {
-        // 🔥 ENSEMBLE (3 corridas)
-        const runs = [];
-
-        for (let i = 0; i < 3; i++) {
-            const res = await runAIPrediction(stockData);
-            if (res.error) throw new Error(res.error);
-            runs.push(res);
-        }
-
-        // 🔹 Promedios
-        const avgProb = runs.reduce((a,b)=>a+b.probability,0) / runs.length;
-        const avgConf = runs.reduce((a,b)=>a+b.confidence,0) / runs.length;
-
-        // 🔹 Incertidumbre (desvío estándar)
-        const variance = runs.reduce((a,b)=>a + Math.pow(b.probability - avgProb, 2), 0) / runs.length;
-        const uncertainty = Math.sqrt(variance);
-
-        // 🔹 Resultado final
-        const result = {
-            ...runs[0],
-            probability: avgProb,
-            confidence: avgConf,
-            uncertainty
-        };
-
-        // Guardar en cache legacy
-        window.aiPredictionCacheLegacy[symbol] = result;
-
-        // 🔥 Alert mejorado
-        const popText = `🤖 IA PREDICT LEGACY (${symbol})
-----------------------------------
-${result.thought || 'Análisis basado en patrones históricos'}
-----------------------------------
-📊 Probabilidad: ${(result.probability*100).toFixed(1)}%
-🎯 Confianza: ${result.confidence.toFixed(1)}/100
-⚠️ Incertidumbre: ${(result.uncertainty*100).toFixed(1)}%
-
-🧠 Interpretación:
-${interpretAI(result)}
-`;
-
-        alert(popText);
-        
-        callbackRefreshUI();
-
-    } catch (e) {
-        console.error("AI Error:", e);
-        alert("Hubo un error calculando con IA: " + e.message);
-    } finally {
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-    }
-}
 
 export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefreshUI) {
     const stockData = globalStocksData.find(s => s.symbol === symbol);
@@ -117,11 +20,16 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
     }
 
     try {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (auth.currentUser) {
+            headers['x-uid'] = auth.currentUser.uid;
+        }
+
         const response = await fetch(`${window.API_BASE_URL}/analyze`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: headers,
             body: JSON.stringify({ symbol, stockData })
         });
 
@@ -232,7 +140,6 @@ export function handleOpenNewsModal(symbol, globalStocksData) {
 
 // --- AUTO-BOT HEADLESS ANALYSIS ---
 window.pendingAnalysesOpenAI = new Set();
-window.pendingAnalysesLegacy = new Set();
 
 window.requestAIAnalysisHeadless = async function(symbol) {
     if (window.pendingAnalysesOpenAI.has(symbol)) {
@@ -258,9 +165,14 @@ window.requestAIAnalysisHeadless = async function(symbol) {
     console.log(`🤖 Bot ChatGPT: Solicitando análisis autónomo para ${symbol}...`);
 
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (auth.currentUser) {
+            headers['x-uid'] = auth.currentUser.uid;
+        }
+
         const response = await fetch(`${window.API_BASE_URL}/analyze`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ symbol, stockData })
         });
 
@@ -287,79 +199,5 @@ window.requestAIAnalysisHeadless = async function(symbol) {
         console.error("Headless OpenAI Error:", e);
     } finally {
         window.pendingAnalysesOpenAI.delete(symbol);
-    }
-};
-
-window.requestAILegacyHeadless = async function(symbol) {
-    if (window.pendingAnalysesLegacy.has(symbol)) {
-        console.log(`⏳ Análisis de Legacy para ${symbol} ya está en curso.`);
-        return;
-    }
-    if (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[symbol]) return;
-
-    // No analizar acciones que el bot Legacy ya tiene en cartera
-    if (window.autoPortfolioLegacy && window.autoPortfolioLegacy.find(p => p.symbol === symbol)) {
-        console.log(`ℹ️ Bot Legacy: ${symbol} ya está en cartera, omitiendo análisis.`);
-        return;
-    }
-    
-    const stocks = window.globalStocksData || [];
-    const stockData = stocks.find(s => s.symbol === symbol);
-    if (!stockData) {
-        console.error(`❌ No se encontró data para ${symbol} en globalStocksData.`);
-        return;
-    }
-
-    // --- USAR PREDICCIÓN PRE-CALCULADA SI EXISTE ---
-    if (stockData.aiPredictionLegacy && !stockData.aiPredictionLegacy.error) {
-        window.aiPredictionCacheLegacy[symbol] = {
-            ...stockData.aiPredictionLegacy,
-            usable: true
-        };
-        console.log(`✅ Bot Legacy: Usando predicción pre-calculada de Firestore para ${symbol}. Prob: ${stockData.aiPredictionLegacy.probability.toFixed(2)}`);
-        if (typeof window.checkNotifications === 'function') window.checkNotifications(true);
-        if (typeof window.refreshUI === 'function') window.refreshUI();
-        return;
-    }
-
-    // Validar que hay suficientes datos históricos antes de llamar al motor de IA
-    const MIN_DAYS = 85; // windowSize(20) + horizon(5) + 60
-    const prices = stockData.history && stockData.history.prices;
-    if (!prices || !Array.isArray(prices) || prices.length < MIN_DAYS) {
-        console.warn(`⚠️ Bot Legacy: ${symbol} tiene datos insuficientes para IA y no tiene predicciones en Firestore.`);
-        return;
-    }
-    
-    window.pendingAnalysesLegacy.add(symbol);
-    console.log(`🤖 Bot Legacy: Calculando análisis autónomo para ${symbol}...`);
-
-    try {
-        const runs = [];
-        for (let i = 0; i < 3; i++) {
-            const res = await runAIPrediction(stockData);
-            if (res.error) throw new Error(res.error);
-            runs.push(res);
-        }
-
-        const avgProb = runs.reduce((a,b)=>a+b.probability,0) / runs.length;
-        const avgConf = runs.reduce((a,b)=>a+b.confidence,0) / runs.length;
-        const variance = runs.reduce((a,b)=>a + Math.pow(b.probability - avgProb, 2), 0) / runs.length;
-        const uncertainty = Math.sqrt(variance);
-
-        window.aiPredictionCacheLegacy[symbol] = {
-            ...runs[0],
-            probability: avgProb,
-            confidence: avgConf,
-            uncertainty,
-            usable: true
-        };
-
-        console.log(`✅ Bot Legacy: Análisis autónomo completado para ${symbol}. Prob: ${avgProb}`);
-        if (typeof window.checkNotifications === 'function') window.checkNotifications(true);
-        if (typeof window.refreshUI === 'function') window.refreshUI();
-    } catch (e) {
-        console.error("Headless Legacy Error:", e);
-    } finally {
-        window.pendingAnalysesLegacy.delete(symbol);
     }
 };

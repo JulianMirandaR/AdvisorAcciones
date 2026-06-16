@@ -5,7 +5,7 @@ import { RealDataService, auth, db } from './realData.js';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
-import { handlePredictAILegacy, handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
+import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
 import { runWalkForwardBacktest } from './walkForwardEngine.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
@@ -15,20 +15,14 @@ const chartInstances = {};
 window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
 
 window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
-window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
-
-window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 
 window.setStrategyMode = (mode) => {
     window.strategyMode = mode;
     if (typeof refreshUI === 'function') refreshUI();
 };
 
-window.aiPredictionCache = {};
-window.aiPredictionCacheLegacy = {};
-window.pendingAnalysesLegacy = new Set();
+window.aiPredictionCacheOpenAI = {};
 window.pendingAnalysesOpenAI = new Set();
-window.predictAILegacy = (symbol) => handlePredictAILegacy(symbol, globalStocksData, refreshUI);
 window.predictOpenAI = (symbol) => handlePredictOpenAI(symbol, globalStocksData, refreshUI);
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
 // (El motor de recomendaciones se ha extraído a analysisEngine.js)
@@ -69,8 +63,6 @@ window.cloudSynced = false;
 window.authInitialized = false; // Flag para saber si Firebase ya resolvió el auth
 window.autoTradingEnabled = false;
 window.simCapital = 10000; // Capital simulado base para auto-trading
-window.autoPortfolioLegacy = [];
-window.autoClosedTradesLegacy = [];
 window.autoPortfolioChatGPT = [];
 window.autoClosedTradesChatGPT = [];
 window.botInterval = 5; // Minutos entre ejecuciones
@@ -78,15 +70,12 @@ window.lastBotExecution = 0; // Timestamp última ejecución
 
 window.iolUsername = '';
 window.iolPassword = '';
-window.autoTradingLegacyEnabled = true;
 window.autoTradingChatGPTEnabled = true;
 
 
 window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo", currentMarketCondition = "Desconocido", botType = 'chatgpt') => {
-    const portfolioArr = botType === 'legacy' ? window.autoPortfolioLegacy : window.autoPortfolioChatGPT;
-    const historyArr = botType === 'legacy' ? window.autoClosedTradesLegacy : window.autoClosedTradesChatGPT;
-    const storageKeyPortfolio = botType === 'legacy' ? 'advisor_auto_portfolio_legacy' : 'advisor_auto_portfolio_chatgpt';
-    const storageKeyHistory = botType === 'legacy' ? 'advisor_auto_closed_trades_legacy' : 'advisor_auto_closed_trades_chatgpt';
+    const portfolioArr = window.autoPortfolioChatGPT;
+    const historyArr = window.autoClosedTradesChatGPT;
 
     const pos = portfolioArr[index];
     if (!pos) return;
@@ -109,51 +98,44 @@ window.removeFromAutoPortfolio = (index, exitReason = "Cierre manual o externo",
             entryReason: pos.entryReason || "Desconocido",
             executionScore: pos.executionScore || null,
             marketCondition: currentMarketCondition,
-            botType: botType
+            botType: 'chatgpt'
         });
 
-        // Enviar feedback a OpenAI backend para mejorar análisis futuros (solo si es bot chatgpt o si queremos ambos)
-        if (botType === 'chatgpt') {
-            fetch(`${window.API_BASE_URL}/feedback`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    symbol: pos.symbol,
-                    action: profitPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
-                    price: currentPrice,
-                    profitPct: profitPct,
-                    date: new Date().toISOString()
-                })
-            }).catch(err => console.error("Error enviando feedback a AI:", err));
-        }
+        // Enviar feedback a OpenAI backend para mejorar análisis futuros
+        fetch(`${window.API_BASE_URL}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: pos.symbol,
+                action: profitPct > 0 ? "TAKE_PROFIT" : "STOP_LOSS",
+                price: currentPrice,
+                profitPct: profitPct,
+                date: new Date().toISOString()
+            })
+        }).catch(err => console.error("Error enviando feedback a AI:", err));
     }
 
     portfolioArr.splice(index, 1);
     if (window.cloudSynced) window.syncDataToFirebase();
-    if (window.cloudSynced) window.syncDataToFirebase();
-    if (currentTerm === 'bot_legacy_portfolio' || currentTerm === 'bot_chatgpt_portfolio') renderPortfolio();
+    if (currentTerm === 'bot_chatgpt_portfolio') renderPortfolio();
 };
 
 window.toggleAutoTrading = () => {
     window.autoTradingEnabled = !window.autoTradingEnabled;
     if (window.cloudSynced) window.syncDataToFirebase();
-    if (window.cloudSynced) window.syncDataToFirebase();
     window.updateAutoTradeUI();
     
     if (window.autoTradingEnabled) {
         console.log("🤖 Auto-Trading ACTIVADO. Iniciando procesos...");
-        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. Motores Legacy y ChatGPT iniciando escaneo de prioridad...", "info");
+        window.addNotification("🤖 Bot de Auto-Trading ACTIVADO. ChatGPT iniciando escaneo de prioridad...", "info");
         
         // --- ESCANEO DE PRIORIDAD (Inicia compra inmediata si es posible) ---
         if (globalStocksData.length > 0) {
             console.log(`🔍 Escaneando ${globalStocksData.length} activos en modo prioridad...`);
             // 1. Notificar inicio de motores
             setTimeout(() => {
-                window.addNotification("🤖 Motor Legacy: ACTIVADO (Estrategia Conservadora)", "info");
+                window.addNotification("🤖 Motor ChatGPT: ACTIVADO", "info");
             }, 500);
-            setTimeout(() => {
-                window.addNotification("🤖 Motor ChatGPT: ACTIVADO (Estrategia Agresiva)", "info");
-            }, 1000);
 
             // 2. Ejecutar chequeo inicial (Forzamos ejecución inmediata al activar)
             window.lastBotExecution = 0;
@@ -176,7 +158,6 @@ window.toggleAutoTrading = () => {
                     if (window.autoTradingEnabled) {
                         console.log(`🚀 Priority Scan: Solicitando IA para ${c.symbol} (Score: ${c.score})`);
                         if (window.requestAIAnalysisHeadless) window.requestAIAnalysisHeadless(c.symbol);
-                        if (window.requestAILegacyHeadless) window.requestAILegacyHeadless(c.symbol);
                     }
                 }, 1500 + (index * 2000)); // Escalonar para no saturar
             });
@@ -216,18 +197,13 @@ window.updateAutoTradeUI = () => {
 
 window.openBotSettings = () => {
     document.getElementById('botIntervalInput').value = window.botInterval;
-    
-    document.getElementById('runLegacyInput').checked = window.autoTradingLegacyEnabled;
     document.getElementById('runChatGPTInput').checked = window.autoTradingChatGPTEnabled;
     document.getElementById('botSettingsModal').style.display = 'flex';
 };
 
 window.saveBotSettings = () => {
     const intervalVal = document.getElementById('botIntervalInput').value;
-    
-    const runLegacyVal = document.getElementById('runLegacyInput').checked;
     const runChatGPTVal = document.getElementById('runChatGPTInput').checked;
-    
     const interval = parseInt(intervalVal);
     
     if (isNaN(interval) || interval < 1) {
@@ -236,11 +212,9 @@ window.saveBotSettings = () => {
     }
     
     window.botInterval = interval;
-    
-    window.autoTradingLegacyEnabled = runLegacyVal;
     window.autoTradingChatGPTEnabled = runChatGPTVal;
     
-    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min. Legacy: ${runLegacyVal ? 'ON' : 'OFF'}, ChatGPT: ${runChatGPTVal ? 'ON' : 'OFF'}`, "info");
+    window.addNotification(`⚙️ Configuración Guardada: Frecuencia ${interval} min. ChatGPT: ${runChatGPTVal ? 'ON' : 'OFF'}`, "info");
     document.getElementById('botSettingsModal').style.display = 'none';
     
     if (window.cloudSynced) {
@@ -308,9 +282,13 @@ window.testIolConnection = async () => {
     testResEl.textContent = '🧪 Probando conexión con IOL...';
     
     try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (auth.currentUser) {
+            headers['x-uid'] = auth.currentUser.uid;
+        }
         const response = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/test-iol-login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: headers,
             body: JSON.stringify({ username: usernameVal, password: passwordVal })
         });
         
@@ -541,26 +519,14 @@ function checkNotifications(force = false) {
         const userAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo, 'auto');
         const userSig = userAnalysis.signal;
 
-        if (portfolioPos) {
-            if ((userSig.includes('VENTA') || userSig.includes('DEBIL')) && prevSignal && (!prevSignal.includes('VENTA') && !prevSignal.includes('DEBIL'))) {
-                window.addNotification(`Tu posición ${stock.symbol} ahora da señal de ${userSig}. ¡Revisa tu portafolio!`, 'sell', stock.symbol);
-            }
-            if (userAnalysis.actionFlag === 'STOP_LOSS' && prevSignal !== 'STOP_LOSS') {
-                window.addNotification(`⚠️ ALERTA: ${stock.symbol} ha tocado tu Stop Loss. Considera cerrar posición.`, 'sell', stock.symbol);
-            }
-            if (userAnalysis.actionFlag === 'TAKE_PROFIT' && prevSignal !== 'TAKE_PROFIT') {
-                window.addNotification(`✅ ALERTA: ${stock.symbol} ha alcanzado objetivo de Take Profit.`, 'buy', stock.symbol);
-            }
-        }
-
-        // Alertas visuales para el usuario
+        // Alertas visuales para el usuario (Exclusivamente "COMPRA FUERTE")
         if (!portfolioPos) {
-            const isNewBuySignal = (userSig === 'COMPRA' || userSig === 'COMPRA FUERTE') && prevSignal && prevSignal !== 'COMPRA' && prevSignal !== 'COMPRA FUERTE';
-            if (isNewBuySignal) {
+            const isNewStrongBuySignal = (userSig === 'COMPRA FUERTE') && prevSignal !== 'COMPRA FUERTE';
+            if (isNewStrongBuySignal) {
                 if (userAnalysis.confirmationLevel === 'ALTA CONFIANZA') {
-                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de ${userSig} (Confirmada con IA).`, 'buy', stock.symbol);
+                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de COMPRA FUERTE (Confirmada con IA).`, 'buy', stock.symbol);
                 } else {
-                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de ${userSig}.`, 'buy', stock.symbol);
+                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de COMPRA FUERTE.`, 'buy', stock.symbol);
                 }
             }
         }
@@ -576,7 +542,6 @@ function checkNotifications(force = false) {
             if (!alert.triggered && alert.symbol === stock.symbol) {
                 if ((alert.direction === 'up' && stock.price >= alert.targetPrice) ||
                     (alert.direction === 'down' && stock.price <= alert.targetPrice)) {
-                    window.addNotification(`🎯 ALERTA DE PRECIO: ${stock.symbol} cruzó tu objetivo de $${alert.targetPrice.toFixed(2)} (Actual: $${stock.price})`, 'buy', stock.symbol);
                     alert.triggered = true;
                     hasChanges = true; // Forzamos guardar la alerta
                 }
@@ -680,7 +645,12 @@ async function updateIolStatus() {
         if (auth && auth.currentUser) {
             url += `?uid=${auth.currentUser.uid}`;
         }
+        const headers = {};
+        if (auth && auth.currentUser) {
+            headers['x-uid'] = auth.currentUser.uid;
+        }
         const res = await fetch(url, {
+            headers: headers,
             credentials: 'include'
         });
         if (res.ok) {
@@ -798,14 +768,7 @@ function refreshUI() {
         
         renderHistorial('user');
         return;
-    } else if (currentTerm === 'bot_legacy_portfolio') {
-        container.style.display = 'none';
-        controlsContainer.style.display = 'none';
-        portfolioContainer.style.display = 'block';
-        if (historialContainer) historialContainer.style.display = 'none';
-        
-        renderPortfolio('legacy');
-        return;
+
     } else if (currentTerm === 'bot_chatgpt_portfolio') {
         container.style.display = 'none';
         controlsContainer.style.display = 'none';
@@ -980,8 +943,7 @@ function createCardHTML(item) {
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
-                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictAILegacy('${data.symbol}')"`} id="btn-ai-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#8b5cf6'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(139, 92, 246, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 IA Legacy'}</button>
-                <button type="button" ${window.aiPredictionCache[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictOpenAI('${data.symbol}')"`} id="btn-ai-open-${data.symbol}" style="background:${window.aiPredictionCache[data.symbol] ? '#4b5563' : '#10a37f'}; border:none; color:white; cursor:${window.aiPredictionCache[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCache[data.symbol] ? 'none' : '0 0 5px rgba(16, 163, 127, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCache[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCache[data.symbol] ? '✅ IA Confirmada' : '🧠 OpenAI'}</button>
+                <button type="button" ${window.aiPredictionCacheOpenAI[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictOpenAI('${data.symbol}')"`} id="btn-ai-open-${data.symbol}" style="background:${window.aiPredictionCacheOpenAI[data.symbol] ? '#4b5563' : '#10a37f'}; border:none; color:white; cursor:${window.aiPredictionCacheOpenAI[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCacheOpenAI[data.symbol] ? 'none' : '0 0 5px rgba(16, 163, 127, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCacheOpenAI[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCacheOpenAI[data.symbol] ? '✅ IA Confirmada' : '🧠 OpenAI'}</button>
                 <button type="button" onclick="event.preventDefault(); window.openPriceAlert('${data.symbol}', ${data.price})" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">🔔 Alerta</button>
                 <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
             </div>
@@ -1093,9 +1055,7 @@ window.toggleWatchlist = (symbol, event) => {
 window.clearPortfolio = (viewType = 'user') => {
     if(!confirm('¿Estás seguro que deseas vaciar este portafolio por completo? No podrás recuperarlo.')) return;
     
-    if (viewType === 'legacy') {
-        window.autoPortfolioLegacy = [];
-    } else if (viewType === 'chatgpt') {
+    if (viewType === 'chatgpt') {
         window.autoPortfolioChatGPT = [];
     } else {
         portfolio = [];
@@ -1109,7 +1069,6 @@ window.clearHistory = (viewType = 'user') => {
     if(!confirm('¿Estás seguro que deseas vaciar el historial de operaciones por completo?')) return;
     
     if (viewType === 'bots') {
-        window.autoClosedTradesLegacy = [];
         window.autoClosedTradesChatGPT = [];
     } else {
         closedTrades = [];
@@ -1123,18 +1082,13 @@ window.removeFromHistory = (index, viewType = 'user') => {
     if (!confirm('¿Eliminar permanentemente este registro del historial?')) return;
     
     if (viewType === 'bots') {
-        const combined = [...window.autoClosedTradesLegacy, ...window.autoClosedTradesChatGPT];
+        const combined = [...window.autoClosedTradesChatGPT];
         combined.sort((a, b) => new Date(b.date) - new Date(a.date));
         const tradeToDelete = combined[index];
         
-        const idxLegacy = window.autoClosedTradesLegacy.indexOf(tradeToDelete);
-        if (idxLegacy !== -1) {
-            window.autoClosedTradesLegacy.splice(idxLegacy, 1);
-        } else {
-            const idxChat = window.autoClosedTradesChatGPT.indexOf(tradeToDelete);
-            if (idxChat !== -1) {
-                window.autoClosedTradesChatGPT.splice(idxChat, 1);
-            }
+        const idxChat = window.autoClosedTradesChatGPT.indexOf(tradeToDelete);
+        if (idxChat !== -1) {
+            window.autoClosedTradesChatGPT.splice(idxChat, 1);
         }
     } else {
         closedTrades.splice(index, 1);
@@ -1218,11 +1172,7 @@ function renderPortfolio(viewType = 'user') {
     let title;
     let emptyMsg;
     
-    if (viewType === 'legacy') {
-        targetPortfolio = window.autoPortfolioLegacy;
-        title = '<h4>🤖 Portafolio Bot Legacy (TF.js)</h4>';
-        emptyMsg = 'El portafolio del bot Legacy está vacío.';
-    } else if (viewType === 'chatgpt') {
+    if (viewType === 'chatgpt') {
         targetPortfolio = window.autoPortfolioChatGPT;
         title = '<h4>🤖 Portafolio Bot ChatGPT (OpenAI)</h4>';
         emptyMsg = 'El portafolio del bot ChatGPT está vacío.';
@@ -1306,7 +1256,7 @@ function renderPortfolio(viewType = 'user') {
             const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
             
             // Preferencia de IA para el análisis en la tabla según el bot
-            const aiPref = viewType === 'legacy' ? 'legacy' : (viewType === 'chatgpt' ? 'openai' : 'auto');
+            const aiPref = viewType === 'chatgpt' ? 'openai' : 'auto';
             const analysis = analyzeStockWithMarketCondition(stockData, window.portfolioTerm, getMarketCondition(vix), portfolioInfo, aiPref);
             const sig = analysis.signal;
 
@@ -1644,7 +1594,8 @@ onAuthStateChanged(auth, async (user) => {
             await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/session?uid=${user.uid}`, {
                 method: 'POST',
                 headers: { 
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'x-uid': user.uid
                 },
                 body: JSON.stringify({ uid: user.uid }),
                 credentials: 'include'
@@ -1652,6 +1603,9 @@ onAuthStateChanged(auth, async (user) => {
 
             // Cargar datos desde el Backend (que a su vez lee Firestore)
             const response = await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${user.uid}`, {
+                headers: {
+                    'x-uid': user.uid
+                },
                 credentials: 'include'
             });
             if (response.ok) {
@@ -1664,8 +1618,6 @@ onAuthStateChanged(auth, async (user) => {
                     window.autoTradingEnabled = d.autoTradingEnabled;
                     if(typeof window.updateAutoTradeUI === 'function') window.updateAutoTradeUI();
                 }
-                if (d.autoPortfolioLegacy) window.autoPortfolioLegacy = d.autoPortfolioLegacy;
-                if (d.autoClosedTradesLegacy) window.autoClosedTradesLegacy = d.autoClosedTradesLegacy;
                 if (d.autoPortfolioChatGPT) window.autoPortfolioChatGPT = d.autoPortfolioChatGPT;
                 if (d.autoClosedTradesChatGPT) window.autoClosedTradesChatGPT = d.autoClosedTradesChatGPT;
                 if (d.notifications) window.notifications = d.notifications;
@@ -1677,7 +1629,6 @@ onAuthStateChanged(auth, async (user) => {
                 if (d.closedTrades) closedTrades = d.closedTrades;
                 if (d.iolUsername) window.iolUsername = d.iolUsername;
                 if (d.iolPassword) window.iolPassword = d.iolPassword;
-                if (d.autoTradingLegacyEnabled !== undefined) window.autoTradingLegacyEnabled = d.autoTradingLegacyEnabled;
                 if (d.autoTradingChatGPTEnabled !== undefined) window.autoTradingChatGPTEnabled = d.autoTradingChatGPTEnabled;
             }
             await updateIolStatus();
@@ -1691,9 +1642,13 @@ onAuthStateChanged(auth, async (user) => {
         document.getElementById('cloudStatusText').style.color = "inherit";
         
         // Cerrar sesión en el backend
+        const logoutHeaders = {};
+        if (auth.currentUser) {
+            logoutHeaders['x-uid'] = auth.currentUser.uid;
+        }
         fetch(`https://advisoraccionesbackend-production.up.railway.app/api/auth/logout`, { 
-            // Cerrar sesión en el backend
             method: 'POST',
+            headers: logoutHeaders,
             credentials: 'include'
         });
         
@@ -1707,7 +1662,8 @@ window.syncDataToFirebase = async function() {
        await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${auth.currentUser.uid}`, {
            method: 'POST',
            headers: { 
-               'Content-Type': 'application/json'
+               'Content-Type': 'application/json',
+               'x-uid': auth.currentUser.uid
            },
            credentials: 'include',
            body: JSON.stringify({
@@ -1715,12 +1671,9 @@ window.syncDataToFirebase = async function() {
                watchlist: watchlist,
                priceAlerts: window.priceAlerts,
                autoTradingEnabled: window.autoTradingEnabled,
-               autoTradingLegacyEnabled: window.autoTradingLegacyEnabled,
                autoTradingChatGPTEnabled: window.autoTradingChatGPTEnabled,
                simCapital: window.simCapital,
                botInterval: window.botInterval,
-               autoPortfolioLegacy: window.autoPortfolioLegacy,
-               autoClosedTradesLegacy: window.autoClosedTradesLegacy,
                autoPortfolioChatGPT: window.autoPortfolioChatGPT,
                autoClosedTradesChatGPT: window.autoClosedTradesChatGPT,
                notifications: window.notifications,
@@ -2458,7 +2411,7 @@ function renderHistorial(viewType = 'user') {
     
     if (viewType === 'bots') {
         // Combinamos historiales para la vista general de bots
-        targetTrades = [...window.autoClosedTradesLegacy, ...window.autoClosedTradesChatGPT];
+        targetTrades = [...window.autoClosedTradesChatGPT];
         // Ordenar por fecha descendente
         targetTrades.sort((a, b) => new Date(b.date) - new Date(a.date));
         title = 'Historial de Operaciones de Bots';
@@ -2523,7 +2476,7 @@ function renderHistorial(viewType = 'user') {
         const investedAmount = trade.qty ? (parseFloat(trade.qty) * parseFloat(trade.entryPrice)) : 0;
         const invStr = investedAmount > 0 ? `${curStr} ${investedAmount.toFixed(2)}` : '-';
 
-        const botLabel = trade.botType === 'legacy' ? '<span style="background:#8b5cf6; color:white; padding:2px 5px; border-radius:3px; font-size:0.7rem;">LEGACY</span>' : '<span style="background:#10a37f; color:white; padding:2px 5px; border-radius:3px; font-size:0.7rem;">OPENAI</span>';
+        const botLabel = '<span style="background:#10a37f; color:white; padding:2px 5px; border-radius:3px; font-size:0.7rem;">OPENAI</span>';
 
         tableHtml += `
             <tr style="border-bottom: 1px solid var(--border-color);">

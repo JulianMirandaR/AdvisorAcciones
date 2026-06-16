@@ -12,8 +12,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Lightweight Charts for Advanced Charts (pinned to v4 for compatibility) -->
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-    <!-- TensorFlow.js Library para IA -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+
     <!-- Technical Indicators Library for calculating SMA, RSI, MACD on the client side -->
     <script src="https://cdn.jsdelivr.net/npm/technicalindicators@3.1.0/dist/browser.js"></script>
 </head>
@@ -61,7 +60,7 @@
                     <button class="tab-btn active" data-term="all">Análisis General</button>
                     <button class="tab-btn" data-term="portfolio" style="margin-left: auto;">Mi Portafolio</button>
                     <button class="tab-btn" data-term="historial">Historial</button>
-                    <button class="tab-btn" data-term="bot_legacy_portfolio" style="margin-left: 1rem; border: 1px solid var(--accent-blue); color: var(--accent-blue);">Bot Legacy</button>
+
                     <button class="tab-btn" data-term="bot_chatgpt_portfolio" style="border: 1px solid var(--accent-green); color: var(--accent-green);">Bot ChatGPT</button>
                     <button class="tab-btn" data-term="bot_historial" style="border: 1px solid var(--text-secondary); color: var(--text-secondary);">Historial Bots</button>
                     <div style="display: flex; align-items: center; margin-left: 1rem; padding: 0.5rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--accent-blue); cursor: pointer;" onclick="window.toggleAutoTrading()">
@@ -273,10 +272,6 @@
                 <div style="text-align: left; margin-bottom: 1.5rem;">
                     <label style="font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 0.5rem;">🤖 Estrategias de Auto-Trading Activas</label>
                     <div style="display: flex; flex-direction: column; gap: 0.5rem; background: var(--hover-bg); padding: 0.8rem; border-radius: 4px; border: 1px solid var(--border-color);">
-                        <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; color: white;">
-                            <input type="checkbox" id="runLegacyInput" style="width: 16px; height: 16px; cursor: pointer;">
-                            Activar Bot Legacy (Red Neuronal CNN)
-                        </label>
                         <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; cursor: pointer; color: white;">
                             <input type="checkbox" id="runChatGPTInput" style="width: 16px; height: 16px; cursor: pointer;">
                             Activar Bot ChatGPT (OpenAI GPT-4o)
