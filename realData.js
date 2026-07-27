@@ -35,6 +35,10 @@ export class RealDataService {
                 const docSnap = await getDoc(docRef);
 
                 if (docSnap.exists()) {
+                    // Registrar la fecha real del documento y cuántos días de antigüedad tiene,
+                    // para poder avisar al usuario si está operando con datos viejos.
+                    this.lastDocDate = dateStr;
+                    this.lastDocAgeDays = i;
                     return docSnap.data();
                 }
             }
@@ -59,6 +63,10 @@ export class RealDataService {
         }
 
         if (firestoreData) {
+            // Exponer la fecha/antigüedad real del dato para la UI.
+            window.dataDateStr = this.lastDocDate || null;
+            window.dataAgeDays = (typeof this.lastDocAgeDays === 'number') ? this.lastDocAgeDays : null;
+
             const mergedList = Object.values(firestoreData).map(stockData => {
                 if (stockData.history && typeof stockData.history === 'string') {
                     try { stockData.history = JSON.parse(stockData.history); } catch (e) {}
@@ -66,7 +74,12 @@ export class RealDataService {
                 return stockData;
             });
             onStockLoaded(mergedList);
-            if (onProgressMsg) onProgressMsg("Datos de mercado actualizados exitosamente.");
+            if (onProgressMsg) {
+                const ageMsg = window.dataAgeDays > 0
+                    ? ` ⚠️ Datos de hace ${window.dataAgeDays} día(s) (${this.lastDocDate}).`
+                    : ` (${this.lastDocDate}).`;
+                onProgressMsg(`Datos de mercado cargados${ageMsg}`);
+            }
         } else {
             console.log("No data in Firestore yet.");
             if (onProgressMsg) onProgressMsg("No hay datos en la nube. Esperando actualización del servidor.");

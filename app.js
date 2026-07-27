@@ -473,7 +473,9 @@ function calculateExecutionScore(stock, analysis) {
         if ((aiData.strength * 100) > 60) score += 1;
     }
 
-    console.log(`📊 Score de Ejecución para ${stock.symbol}: ${score} (Señal: ${sig})`);
+    // Penalización por balance inminente (evento binario)
+    if (analysis.earningsRisk !== null && analysis.earningsRisk !== undefined) score -= 3;
+
     return Math.max(0, Math.min(12, score));
 }
 
@@ -492,6 +494,46 @@ function validateEntry(analysis, symbol) {
     }
 
     return { valid: true };
+}
+
+// --- AUTO-IA PARA TOP-N CANDIDATOS ---
+// Antes la confirmación de OpenAI había que pedirla a mano en cada tarjeta, por lo que en la
+// vista general la fusión bayesiana nunca se aplicaba. Esto la dispara automáticamente para
+// los mejores candidatos técnicos, con límites para controlar el costo de la API.
+window.autoAICount = 0;
+const AUTO_AI_SESSION_CAP = 12;   // máximo de llamadas automáticas a OpenAI por sesión
+const AUTO_AI_BATCH_SIZE = 3;     // candidatos por lote
+const AUTO_AI_COOLDOWN_MS = 20000; // espera mínima entre lotes
+let lastAutoAIBatch = 0;
+
+function maybeRequestAIForTopCandidates(analyzedStocks) {
+    if (typeof window.requestAIAnalysisHeadless !== 'function') return;
+    if (window.autoAICount >= AUTO_AI_SESSION_CAP) return;
+
+    const now = Date.now();
+    if (now - lastAutoAIBatch < AUTO_AI_COOLDOWN_MS) return;
+
+    const candidates = analyzedStocks
+        .filter(item => {
+            const sig = item.analysis.signal || '';
+            const isBuyish = sig.includes('COMPRA'); // COMPRA, COMPRA FUERTE, PRE-COMPRA
+            const hasAI = window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[item.data.symbol];
+            const pending = window.pendingAnalysesOpenAI && window.pendingAnalysesOpenAI.has(item.data.symbol);
+            return isBuyish && !hasAI && !pending;
+        })
+        .sort((a, b) => b.analysis.score - a.analysis.score)
+        .slice(0, AUTO_AI_BATCH_SIZE);
+
+    if (candidates.length === 0) return;
+    lastAutoAIBatch = now;
+
+    candidates.forEach((c, i) => {
+        setTimeout(() => {
+            if (window.autoAICount >= AUTO_AI_SESSION_CAP) return;
+            window.autoAICount++;
+            window.requestAIAnalysisHeadless(c.data.symbol);
+        }, i * 2500); // escalonado para no saturar el backend
+    });
 }
 
 
@@ -522,7 +564,10 @@ function checkNotifications(force = false) {
         // Alertas visuales para el usuario (Exclusivamente "COMPRA FUERTE")
         if (!portfolioPos) {
             const isNewStrongBuySignal = (userSig === 'COMPRA FUERTE') && prevSignal !== 'COMPRA FUERTE';
-            if (isNewStrongBuySignal) {
+            // Filtro de validez de entrada: no alertar si hay conflicto de plazos o
+            // volatilidad extrema (VIX > 35). Antes esta validación era código muerto.
+            const entryCheck = validateEntry(userAnalysis, stock.symbol);
+            if (isNewStrongBuySignal && entryCheck.valid) {
                 if (userAnalysis.confirmationLevel === 'ALTA CONFIANZA') {
                     window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de COMPRA FUERTE (Confirmada con IA).`, 'buy', stock.symbol);
                 } else {
@@ -576,16 +621,31 @@ function renderMarketStatus() {
     const today = now.toLocaleDateString();
     const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    let usageInfo = `<br><span style="font-size: 0.8rem; color: var(--accent-green);">Actualización de precios automática desde la nube activa</span>`;
+    const ageDays = (typeof window.dataAgeDays === 'number') ? window.dataAgeDays : null;
+    const dataDate = window.dataDateStr || null;
+
+    let usageInfo;
+    let borderColor = 'var(--text-primary)';
+    let indicatorClass = 'status-up';
+
+    if (ageDays !== null && ageDays > 0) {
+        // Dato viejo: advertencia explícita en vez de aparentar tiempo real.
+        usageInfo = `<br><span style="font-size: 0.85rem; color: var(--accent-red); font-weight: bold;">⚠️ Datos NO actualizados hoy: corresponden a ${dataDate} (hace ${ageDays} día[s]). Las señales pueden estar desactualizadas.</span>`;
+        borderColor = 'var(--accent-red)';
+        indicatorClass = 'status-down';
+    } else {
+        const dateLabel = dataDate ? ` (cierre ${dataDate})` : '';
+        usageInfo = `<br><span style="font-size: 0.8rem; color: var(--accent-green);">Datos de cierre diario sincronizados desde la nube${dateLabel}. No es cotización intradía en vivo.</span>`;
+    }
 
     marketStatus.innerHTML = `
-        <span class="status-indicator status-up"></span>
+        <span class="status-indicator ${indicatorClass}"></span>
         <div>
             Datos del Mercado para: ${today} a las ${time}
             ${usageInfo}
         </div>
     `;
-    marketStatus.style.borderColor = 'var(--text-primary)';
+    marketStatus.style.borderColor = borderColor;
 }
 
 async function initDashboard() {
@@ -809,8 +869,16 @@ function refreshUI() {
     let analyzedStocks = filteredList.map(data => {
         const vix = globalMacroData && globalMacroData.vix ? globalMacroData.vix : 25;
         const analysis = analyzeStockWithMarketCondition(data, currentTerm, getMarketCondition(vix));
-        return { data, analysis };
+        // Score de calidad de ejecución: combina señal, setup, alineación de plazos,
+        // volumen y confirmación IA para ordenar por CALIDAD real del setup, no solo score crudo.
+        const execScore = calculateExecutionScore(data, analysis);
+        return { data, analysis, execScore };
     });
+
+    // --- AUTO-IA PARA TOP-N (antes había que pedir OpenAI acción por acción a mano) ---
+    // Solicita confirmación de IA en segundo plano para los mejores candidatos técnicos,
+    // así el motor bayesiano participa en la recomendación sin intervención manual.
+    maybeRequestAIForTopCandidates(analyzedStocks);
 
     // 3. Apply Signal/Watchlist Filter
     if (activeFilter === 'favorites') {
@@ -832,7 +900,11 @@ function refreshUI() {
         } else if (activeSort === 'long') {
             return b.analysis.largo_plazo.score - a.analysis.largo_plazo.score;
         } else {
-            return b.analysis.score - a.analysis.score;
+            // Ranking compuesto: el score sigue mandando, pero la calidad del setup
+            // (execScore) desempata y eleva oportunidades genuinas sobre señales planas.
+            const rankA = a.analysis.score + (a.execScore * 0.25);
+            const rankB = b.analysis.score + (b.execScore * 0.25);
+            return rankB - rankA;
         }
     });
 
@@ -871,11 +943,25 @@ function createCardHTML(item) {
     // Fundamental snippet check
     let fundamentalHtml = '';
     if (data.peRatio && data.peRatio !== 'N/A') {
+        // data.eps = EPS absoluto (formato nuevo). En docs viejos el EPS venía mal etiquetado
+        // dentro de epsGrowth; usamos fallback para retrocompatibilidad visual.
+        const epsVal = (data.eps != null && data.eps !== 'N/A')
+            ? data.eps
+            : ((data.eps === undefined && data.epsGrowth != null && data.epsGrowth !== 'N/A') ? data.epsGrowth : '--');
         fundamentalHtml += `
         <div class="analysis-item">
             <span class="analysis-label">PER Ratio / EPS</span>
-            <span class="analysis-value">${data.peRatio} / $${data.epsGrowth && data.epsGrowth !== 'N/A' ? data.epsGrowth : '--'}</span>
+            <span class="analysis-value">${data.peRatio} / $${epsVal}</span>
         </div>`;
+        // Crecimiento real de ganancias (solo formato nuevo, cuando es un % válido)
+        if (data.eps !== undefined && data.epsGrowth != null && data.epsGrowth !== 'N/A') {
+            const g = parseFloat(data.epsGrowth);
+            fundamentalHtml += `
+        <div class="analysis-item">
+            <span class="analysis-label">Crec. Ganancias (YoY)</span>
+            <span class="analysis-value" style="color:${g > 0 ? 'var(--accent-green)' : 'var(--accent-red)'}">${g > 0 ? '+' : ''}${g}%</span>
+        </div>`;
+        }
     }
     if (data.beta && data.beta !== 'N/A') {
         fundamentalHtml += `

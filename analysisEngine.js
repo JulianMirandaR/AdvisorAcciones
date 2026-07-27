@@ -36,7 +36,7 @@ export function getMarketCondition(vix) {
 
 // --- 2. TIMEFRAME & STRATEGY ENGINE ---
 function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo) {
-    let factors = { trend: 0, momentum: 0, reversal: 0, macro: 0, risk: 0 };
+    let factors = { trend: 0, momentum: 0, reversal: 0, macro: 0, risk: 0, news: 0 };
     let reasons = [];
     let setupDetected = null;
 
@@ -143,6 +143,25 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
         reversalScore += 2;
     }
 
+    // --- STOCHASTIC LOGIC (Nuevo) ---
+    let stochK = 50;
+    let stochD = 50;
+    if (data.stochastic) {
+        stochK = parseFloat(data.stochastic.k) || 50;
+        stochD = parseFloat(data.stochastic.d) || 50;
+    }
+    
+    if (!isLongTerm) {
+        if (stochK < 20 && stochK > stochD) {
+            reversalScore += 3;
+            addReason(`Estocástico en sobreventa con cruce alcista (K:${stochK.toFixed(0)} > D:${stochD.toFixed(0)}).`, "positive", 85);
+        } else if (stochK > 80 && stochK < stochD) {
+            reversalScore -= 3;
+            factors.risk -= 2;
+            addReason(`Estocástico en sobrecompra con cruce bajista (K:${stochK.toFixed(0)} < D:${stochD.toFixed(0)}).`, "negative", 85);
+        }
+    }
+
     if (support && price < support + atr * 0.5 && price > support - atr * 0.5) {
         reversalScore += 3;
         addReason("Precio testeando área de soporte.", "positive", 80);
@@ -172,6 +191,20 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     } else if (regime === 'BEAR') {
         factors.macro = -4;
         factors.risk -= 3;
+    }
+
+    // --- NEWS SENTIMENT LOGIC (Nuevo: antes solo se mostraba, no afectaba el score) ---
+    // data.newsSentiment viene del backend en rango -5..+5 (keywords sobre titulares reales).
+    const newsRaw = parseFloat(data.newsSentiment);
+    if (!isNaN(newsRaw) && newsRaw !== 0) {
+        // Escalamos a un aporte acotado. El sentimiento pesa más en CP (reacción inmediata).
+        factors.news = Math.max(-4, Math.min(4, newsRaw)) * (isLongTerm ? 0.5 : 1);
+        if (newsRaw >= 2) {
+            addReason(`Flujo de noticias positivo (sentimiento +${newsRaw}).`, "positive", 70);
+        } else if (newsRaw <= -2) {
+            addReason(`Flujo de noticias negativo (sentimiento ${newsRaw}). Cautela.`, "negative", 75);
+            factors.risk -= 1;
+        }
     }
 
     // Adjust by Strategy Mode User Setting
@@ -212,13 +245,16 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     }
 
     // Score Crudo
-    const rawScoreSum = (factors.trend * w.trend) + (factors.momentum * w.mom) + (factors.reversal * w.rev) + 
-                        (factors.macro * w.macro) + (factors.risk * w.risk) + (factors.fundamental * w.fund);
+    // El sentimiento de noticias entra como aporte aditivo acotado (peso 0.15) para no
+    // distorsionar los pesos estructurales normalizados pero sí mover la aguja.
+    const rawScoreSum = (factors.trend * w.trend) + (factors.momentum * w.mom) + (factors.reversal * w.rev) +
+                        (factors.macro * w.macro) + (factors.risk * w.risk) + (factors.fundamental * w.fund) +
+                        (factors.news * 0.15);
 
     // Score Normalizado anti-saturación (0 a 1 prob proxy)
-    // Con divisor 5, un rawScoreSum de +7 da un techProb de ~0.94 (muy alto)
-    // Un rawScoreSum de 0 da 0.5 (Neutral)
-    const techProb = (Math.tanh(rawScoreSum / 5) + 1) / 2;
+    // Divisor 4.5 (antes 5): mejora la diferenciación y permite que un setup técnico
+    // genuinamente fuerte + noticias alcance "COMPRA FUERTE" sin saturar el tope.
+    const techProb = (Math.tanh(rawScoreSum / 4.5) + 1) / 2;
 
     reasons.sort((a, b) => b.weight - a.weight);
 
@@ -302,21 +338,53 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
     
     // Transformación final para UI (score de -10 a 10)
     let finalScore = (posteriorProb * 20) - 10;
-    
+
+    // --- RIESGO DE BALANCE (EARNINGS) ---
+    // Un reporte inminente es un evento binario impredecible. Antes solo se mostraba
+    // una insignia sin efecto; ahora limita la señal de compra para no recomendar
+    // entrar justo antes del balance.
+    let earningsRisk = null;
+    if (data.earningsDate) {
+        const eDate = new Date(data.earningsDate);
+        if (!isNaN(eDate.getTime())) {
+            const daysToEarnings = Math.ceil((eDate - new Date()) / (1000 * 60 * 60 * 24));
+            if (daysToEarnings >= 0 && daysToEarnings <= 7) {
+                earningsRisk = daysToEarnings;
+                // Cap a "OBSERVAR" (máx 1.5): no permitimos COMPRA con balance a la vuelta.
+                if (finalScore > 1.5) finalScore = 1.5;
+            }
+        }
+    }
+
+    // --- CAP POR SOBRECOMPRA EXTREMA ---
+    // Evita emitir "COMPRA FUERTE" en activos muy extendidos (RSI>75 o >3.5 ATR sobre SMA50):
+    // el riesgo de pullback inmediato es alto. Permitimos hasta "COMPRA" (cap 6.0), no FUERTE.
+    const rsiNow = parseFloat(data.rsi);
+    const sma50Now = parseFloat(data.sma50);
+    const atrNow = parseFloat(data.atr) || (data.price * 0.02);
+    const extAtr = (sma50Now && atrNow) ? (data.price - sma50Now) / atrNow : 0;
+    if ((!isNaN(rsiNow) && rsiNow > 75) || extAtr > 3.5) {
+        if (finalScore > 6.0) finalScore = 6.0;
+    }
+
     // Manejo de Portafolio (Trailing Stop dinámico con ATR)
     let actionFlag = null;
     let trailingReason = null;
     const atr = parseFloat(data.atr) || (data.price * 0.02);
     
     if (portfolioInfo && data.price) {
-        const currentReturn = (data.price - portfolioInfo.entryPrice) / portfolioInfo.entryPrice;
+        const entryPrice = portfolioInfo.entryPrice || portfolioInfo.price;
+        const currentReturn = (data.price - entryPrice) / entryPrice;
         // Drawdown vs Peak ajustado por ATR en lugar de un % estático
         const distToPeak = portfolioInfo.highestPrice - data.price;
         
-        if (currentReturn < -0.05) { 
+        // Stop loss dinámico por ATR: 2 * ATR por debajo de la entrada
+        const stopLossPct = - (2 * atr) / entryPrice;
+        
+        if (currentReturn < stopLossPct) { 
             actionFlag = "STOP_LOSS"; 
             finalScore = -10; 
-            trailingReason = { text: "Stop Loss de portafolio alcanzado.", type: "negative", weight: 200 };
+            trailingReason = { text: `Stop Loss dinámico por ATR alcanzado (${(stopLossPct * 100).toFixed(1)}%).`, type: "negative", weight: 200 };
         } else if (distToPeak > atr * 2 && currentReturn > 0.05) { 
             // Cierra posición si cayói más de 2 ATRs desde la cima y estamos en buenas ganancias
             actionFlag = "TAKE_PROFIT"; 
@@ -362,6 +430,7 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
 
     let combinedReasons = [];
     if (trailingReason) combinedReasons.push(trailingReason);
+    if (earningsRisk !== null) combinedReasons.push({ text: `Balance en ${earningsRisk} día(s): riesgo binario, señal limitada.`, type: "negative", weight: 160 });
     if (isConflict) combinedReasons.push({ text: `CONFLICTO: ${conflictMsg}`, type: "neutral", weight: 150 });
     
     combinedReasons = combinedReasons.concat(cp.reasons.slice(0,2)).concat(lp.reasons.slice(0,2));
@@ -384,6 +453,7 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
         reasons: combinedReasons,
         setupDetected: finalSetup,
         actionFlag,
+        earningsRisk,
         ai: aiContext,
         confirmationLevel
     };
