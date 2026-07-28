@@ -1902,13 +1902,14 @@ window.runBacktest = function(stockHistoryChronological, config = {}) {
 
     let currentCapital = capital;
     let position = null;
-    
+
     let trades = [];
     let grossProfit = 0;
     let grossLoss = 0;
     let peakCapital = capital;
     let maxDrawdown = 0;
     let equityCurve = [];
+    let daysInMarket = 0; // para medir exposición (% del tiempo con posición abierta)
 
     testData.forEach((dayData, index) => {
         const currentPrice = parseFloat(dayData.price);
@@ -1995,6 +1996,8 @@ window.runBacktest = function(stockHistoryChronological, config = {}) {
             }
         }
 
+        if (position) daysInMarket++;
+
         const currentEquity = currentCapital + (position ? (currentPrice * position.qty) : 0);
         equityCurve.push({ date: dayData.date, value: currentEquity });
 
@@ -2033,6 +2036,52 @@ window.runBacktest = function(stockHistoryChronological, config = {}) {
     const winRate = trades.length > 0 ? (winningTrades / trades.length) : 0;
     const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
     const totalReturn = (currentCapital - capital) / capital;
+    const exposurePct = testData.length > 0 ? (daysInMarket / testData.length) : 0;
+
+    // --- BENCHMARK: COMPRAR Y MANTENER (mismo activo, misma ventana, mismos costos) ---
+    // Responde la pregunta clave: ¿la estrategia de timing supera a simplemente sostener la acción?
+    const firstPrice = parseFloat(testData[0].price);
+    const lastPrice = parseFloat(testData[testData.length - 1].price);
+    let buyHold = null;
+    if (!isNaN(firstPrice) && firstPrice > 0 && !isNaN(lastPrice)) {
+        const bhEntry = firstPrice * (1 + slippagePct / 100);
+        const bhQty = (capital * (1 - commissionPct / 100)) / bhEntry;
+        // Curva de capital y drawdown de buy & hold (marcado a mercado)
+        let bhPeak = capital, bhMaxDD = 0;
+        const bhEquityCurve = testData.map(d => {
+            const p = parseFloat(d.price);
+            const val = isNaN(p) ? capital : bhQty * p;
+            if (val > bhPeak) bhPeak = val;
+            else { const dd = (bhPeak - val) / bhPeak; if (dd > bhMaxDD) bhMaxDD = dd; }
+            return { date: d.date, value: val };
+        });
+        const bhExit = lastPrice * (1 - slippagePct / 100);
+        const bhFinal = bhQty * bhExit * (1 - commissionPct / 100);
+        buyHold = {
+            totalReturn: (bhFinal - capital) / capital,
+            finalCapital: bhFinal,
+            maxDrawdown: bhMaxDD,
+            equityCurve: bhEquityCurve
+        };
+    }
+
+    // --- BENCHMARK EXTERNO OPCIONAL (ej. SPY / S&P500), alineado a la ventana de test ---
+    let benchmark = null;
+    if (config.benchmark && Array.isArray(config.benchmark.prices) && config.benchmark.prices.length > 1) {
+        const startDate = testData[0].date, endDate = testData[testData.length - 1].date;
+        const bp = config.benchmark.prices.filter(p => p.date >= startDate && p.date <= endDate && p.price != null);
+        if (bp.length > 1) {
+            const bStart = parseFloat(bp[0].price), bEnd = parseFloat(bp[bp.length - 1].price);
+            if (bStart > 0) {
+                benchmark = { label: config.benchmark.label || 'Benchmark', totalReturn: (bEnd - bStart) / bStart };
+            }
+        }
+    }
+
+    // Alpha = exceso de la estrategia sobre comprar y mantener el mismo activo
+    const alpha = buyHold ? (totalReturn - buyHold.totalReturn) : null;
+    // Alpha vs mercado (si hay benchmark externo)
+    const alphaVsBenchmark = benchmark ? (totalReturn - benchmark.totalReturn) : null;
 
     const result = {
         initialCapital: capital,
@@ -2041,10 +2090,15 @@ window.runBacktest = function(stockHistoryChronological, config = {}) {
         winRate: winRate,
         maxDrawdown: maxDrawdown,
         profitFactor: profitFactor === Infinity ? "Infinity" : profitFactor.toFixed(2),
+        exposurePct: exposurePct,
         trades: trades,
-        equityCurve: equityCurve
+        equityCurve: equityCurve,
+        buyHold: buyHold,
+        benchmark: benchmark,
+        alpha: alpha,
+        alphaVsBenchmark: alphaVsBenchmark
     };
-    
+
     return result;
 };
 
@@ -2706,22 +2760,58 @@ window.executeBacktestUI = () => {
             });
         }
 
+        // Benchmark de mercado: comprar y mantener el SPY (S&P 500) en la misma ventana
+        const spyData = globalStocksData.find(s => s.symbol === 'SPY');
+        if (spyData && spyData.history && Array.isArray(spyData.history.dates) && Array.isArray(spyData.history.prices)) {
+            config.benchmark = {
+                label: 'SPY (S&P 500)',
+                prices: spyData.history.dates.map((d, i) => ({ date: d, price: spyData.history.prices[i] }))
+            };
+        }
+
         const results = window.runBacktest(stockHistory, config);
-        
+
         if (!results) {
             document.getElementById('btResults').innerHTML = 'Error en backtest (sin datos).';
             return;
         }
 
         const colorClasses = results.totalReturn >= 0 ? "var(--accent-green)" : "var(--accent-red)";
-        
-        document.getElementById('btResults').innerHTML = `
+
+        // --- VEREDICTO: ¿la estrategia agrega valor sobre comprar y mantener? ---
+        let verdictHtml = '';
+        if (results.buyHold) {
+            const stratRet = results.totalReturn;
+            const bhRet = results.buyHold.totalReturn;
+            const beatsBH = stratRet > bhRet;
+            const spyRet = results.benchmark ? results.benchmark.totalReturn : null;
+            const beatsSPY = spyRet !== null ? stratRet > spyRet : null;
+            const vColor = beatsBH ? 'var(--accent-green)' : 'var(--accent-red)';
+            const alphaTxt = `${results.alpha >= 0 ? '+' : ''}${(results.alpha * 100).toFixed(2)}%`;
+            verdictHtml = `
+            <div style="width:100%; background: rgba(255,255,255,0.03); border:1px solid ${vColor}; border-radius:8px; padding:0.8rem 1rem; margin-bottom:0.8rem;">
+                <div style="font-weight:bold; color:${vColor}; margin-bottom:0.4rem;">
+                    ${beatsBH ? '✅ La estrategia SUPERA a comprar y mantener' : '❌ La estrategia NO supera a comprar y mantener'}
+                    <span style="color:var(--text-secondary); font-weight:normal;">(alpha ${alphaTxt})</span>
+                </div>
+                <div style="display:flex; gap:1.2rem; flex-wrap:wrap; font-size:0.85rem;">
+                    <span>Estrategia: <b style="color:${stratRet>=0?'var(--accent-green)':'var(--accent-red)'}">${(stratRet*100).toFixed(2)}%</b></span>
+                    <span>Comprar y mantener ${symbol}: <b style="color:${bhRet>=0?'var(--accent-green)':'var(--accent-red)'}">${(bhRet*100).toFixed(2)}%</b></span>
+                    ${spyRet !== null ? `<span>SPY (mercado): <b style="color:${spyRet>=0?'var(--accent-green)':'var(--accent-red)'}">${(spyRet*100).toFixed(2)}%</b> ${beatsSPY ? '↑ le gana' : '↓ no le gana'}</span>` : ''}
+                    <span style="color:var(--text-secondary);">Exposición: ${(results.exposurePct*100).toFixed(0)}% del tiempo</span>
+                </div>
+            </div>`;
+        }
+
+        document.getElementById('btResults').innerHTML = verdictHtml + `
+            <div style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;">
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">CAPITAL FINAL</span><br><b style="font-size:1.2rem; color:${colorClasses};">$${results.finalCapital.toFixed(2)}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">RETORNO</span><br><b style="font-size:1.2rem; color:${colorClasses};">${(results.totalReturn*100).toFixed(2)}%</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">WIN RATE</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${(results.winRate*100).toFixed(1)}%</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">MAX DRAWDOWN</span><br><b style="font-size:1.2rem; color:var(--accent-red);">${(results.maxDrawdown*100).toFixed(1)}%</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">PROFIT FACTOR</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.profitFactor}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">TRADES</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.trades.length}</b></div>
+            </div>
         `;
 
         if (btChartInstance) {
@@ -2755,6 +2845,17 @@ window.executeBacktestUI = () => {
                         borderWidth: 2,
                         yAxisID: 'y',
                         fill: true,
+                        tension: 0.1,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Comprar y Mantener',
+                        data: results.buyHold ? results.buyHold.equityCurve.map(x => x.value) : null,
+                        borderColor: '#f59e0b',
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        yAxisID: 'y',
+                        fill: false,
                         tension: 0.1,
                         pointRadius: 0
                     },
