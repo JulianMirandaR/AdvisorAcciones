@@ -186,10 +186,14 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     }
 
     // --- MACRO LOGIC ---
+    // El tailwind/headwind macro escala con la alineación de tendencia propia del activo
+    // (antes era un +4/-4 fijo para CUALQUIER activo en el régimen, lo que inflaba la base
+    // incluso de acciones débiles o directamente en contra de su propia tendencia).
+    const trendAlignment = Math.max(-1, Math.min(1, trendScore / 5));
     if (regime === 'BULL') {
-        factors.macro = 4;
+        factors.macro = 4 * Math.max(0, trendAlignment);
     } else if (regime === 'BEAR') {
-        factors.macro = -4;
+        factors.macro = -4 * Math.max(0, -trendAlignment);
         factors.risk -= 3;
     }
 
