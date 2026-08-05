@@ -2119,11 +2119,11 @@ function renderHeatmap() {
     // Eliminado el estiramiento vertical forzado (65vh y alignContent)
 
     const sectorMapping = {
-        'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología', 'AVGO': 'Tecnología',
+        'AAPL': 'Tecnología', 'MSFT': 'Tecnología', 'GOOGL': 'Tecnología', 'META': 'Tecnología', 'NVDA': 'Tecnología', 'AMD': 'Tecnología', 'INTC': 'Tecnología', 'CRM': 'Tecnología', 'PLTR': 'Tecnología', 'SHOP': 'Tecnología', 'SPOT': 'Tecnología', 'CRWD': 'Tecnología', 'SMCI': 'Tecnología', 'ORCL': 'Tecnología', 'ADBE': 'Tecnología', 'GLOB': 'Tecnología', 'MU': 'Tecnología', 'ARM': 'Tecnología', 'AVGO': 'Tecnología', 'SNDK': 'Tecnología',
         'AMZN': 'Consumo y Retail', 'NFLX': 'Consumo y Retail', 'KO': 'Consumo y Retail', 'PEP': 'Consumo y Retail', 'WMT': 'Consumo y Retail', 'MCD': 'Consumo y Retail', 'NKE': 'Consumo y Retail', 'DIS': 'Consumo y Retail', 'BABA': 'Consumo y Retail', 'MELI': 'Consumo y Retail', 'UBER': 'Consumo y Retail', 'TSLA': 'Consumo y Retail', 'NIO': 'Consumo y Retail',
-        'JPM': 'Finanzas e Índices', 'V': 'Finanzas e Índices', 'MA': 'Finanzas e Índices', 'BAC': 'Finanzas e Índices', 'XP': 'Finanzas e Índices', 'PYPL': 'Finanzas e Índices', 'SQ': 'Finanzas e Índices', 'COIN': 'Finanzas e Índices', 'UPST': 'Finanzas e Índices', 'SPY': 'Finanzas e Índices', 'BTC-USD': 'Finanzas e Índices',
+        'JPM': 'Finanzas e Índices', 'V': 'Finanzas e Índices', 'MA': 'Finanzas e Índices', 'BAC': 'Finanzas e Índices', 'XP': 'Finanzas e Índices', 'PYPL': 'Finanzas e Índices', 'SQ': 'Finanzas e Índices', 'COIN': 'Finanzas e Índices', 'UPST': 'Finanzas e Índices', 'SPY': 'Finanzas e Índices', 'BTC-USD': 'Finanzas e Índices', 'QQQ': 'Finanzas e Índices', 'GLD': 'Finanzas e Índices',
         'YPFD.BA': 'Mercado AR', 'PAMP.BA': 'Mercado AR', 'CEPU.BA': 'Mercado AR', 'TGSU2.BA': 'Mercado AR', 'EDN.BA': 'Mercado AR', 'CRES.BA': 'Mercado AR', 'ALUA.BA': 'Mercado AR', 'TXAR.BA': 'Mercado AR', 'BMA.BA': 'Mercado AR', 'GGAL.BA': 'Mercado AR',
-        'LLY': 'Industria y Salud', 'BA': 'Industria y Salud', 'YPF': 'Industria y Salud', 'CVX': 'Industria y Salud'
+        'LLY': 'Industria y Salud', 'BA': 'Industria y Salud', 'YPF': 'Industria y Salud', 'CVX': 'Industria y Salud', 'VIST': 'Industria y Salud'
     };
 
     // Agrupar stocks por sector
