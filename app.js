@@ -1117,12 +1117,30 @@ tabs.forEach(tab => {
 
 // Search & Filter Events
 const searchInput = document.getElementById('searchInput');
+const searchClearBtn = document.getElementById('searchClearBtn');
 const filterBtns = document.querySelectorAll('.filters .filter-btn');
 const sortBtns = document.querySelectorAll('.sorts .sort-btn');
+
+function updateSearchClearBtn() {
+    if (searchClearBtn) {
+        searchClearBtn.classList.toggle('visible', !!(searchInput && searchInput.value));
+    }
+}
 
 if (searchInput) {
     searchInput.addEventListener('input', (e) => {
         searchTerm = e.target.value.toLowerCase().trim();
+        updateSearchClearBtn();
+        refreshUI();
+    });
+}
+
+if (searchClearBtn) {
+    searchClearBtn.addEventListener('click', () => {
+        searchInput.value = '';
+        searchTerm = '';
+        updateSearchClearBtn();
+        searchInput.focus();
         refreshUI();
     });
 }

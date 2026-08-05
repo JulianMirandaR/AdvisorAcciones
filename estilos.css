@@ -336,10 +336,16 @@ header h1 {
     margin-bottom: 2rem;
 }
 
+.search-box {
+    position: relative;
+    width: 100%;
+    max-width: 400px;
+}
+
 .search-box input {
     width: 100%;
     max-width: 400px;
-    padding: 0.8rem 1.2rem;
+    padding: 0.8rem 2.6rem 0.8rem 1.2rem;
     border-radius: 9999px;
     background-color: #1f2937;
     border: 1px solid var(--border-color);
@@ -354,6 +360,29 @@ header h1 {
 .search-box input:focus {
     border-color: var(--accent-blue);
     box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+}
+
+.search-clear-btn {
+    display: none;
+    position: absolute;
+    right: 0.9rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0.2rem;
+}
+
+.search-clear-btn:hover {
+    color: var(--text-primary);
+}
+
+.search-clear-btn.visible {
+    display: block;
 }
 
 .filters {
