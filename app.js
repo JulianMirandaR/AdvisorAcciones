@@ -2782,11 +2782,6 @@ window.pendingEarningsOpinion = window.pendingEarningsOpinion || new Set();
 
 const EARNINGS_NEWS_LOOKAHEAD_DAYS = 14; // balance a <=14 dias = candidato
 const EARNINGS_NEWS_SENTIMENT_THRESHOLD = 2; // |newsSentiment| >= 2 = candidato
-const AUTO_EARNINGS_AI_SESSION_CAP = 10;
-const AUTO_EARNINGS_AI_BATCH_SIZE = 3;
-const AUTO_EARNINGS_AI_COOLDOWN_MS = 20000;
-window.autoEarningsAICount = window.autoEarningsAICount || 0;
-let lastEarningsAIBatch = 0;
 
 function getEarningsNewsCandidates() {
     const today = new Date();
@@ -2842,27 +2837,6 @@ async function requestEarningsOpinion(symbol) {
         window.pendingEarningsOpinion.delete(symbol);
         updateEarningsOpinionCard(symbol, {});
     }
-}
-
-function maybeRequestEarningsAIForCandidates(candidates) {
-    if (window.autoEarningsAICount >= AUTO_EARNINGS_AI_SESSION_CAP) return;
-    const now = Date.now();
-    if (now - lastEarningsAIBatch < AUTO_EARNINGS_AI_COOLDOWN_MS) return;
-
-    const pending = candidates
-        .filter(c => !window.aiEarningsOpinionCache[c.stock.symbol] && !window.pendingEarningsOpinion.has(c.stock.symbol))
-        .slice(0, AUTO_EARNINGS_AI_BATCH_SIZE);
-
-    if (pending.length === 0) return;
-    lastEarningsAIBatch = now;
-
-    pending.forEach((c, i) => {
-        setTimeout(() => {
-            if (window.autoEarningsAICount >= AUTO_EARNINGS_AI_SESSION_CAP) return;
-            window.autoEarningsAICount++;
-            requestEarningsOpinion(c.stock.symbol);
-        }, i * 2500);
-    });
 }
 
 function renderOpinionBlock(symbol) {
@@ -2934,6 +2908,8 @@ function renderEarningsNewsDigest() {
             newsHtml = '<ul style="margin:0.5rem 0 0 0; padding-left: 1.2rem; font-size:0.85rem; color:var(--text-secondary);">' +
                 stock.newsList.slice(0, 3).map(n => `<li><a href="${n.link || '#'}" target="_blank" rel="noopener" style="color:inherit;">${n.title}</a></li>`).join('') +
                 '</ul>';
+        } else {
+            newsHtml = '<p style="margin:0.5rem 0 0 0; font-size:0.85rem; color:var(--text-secondary);">Sin noticias recientes registradas.</p>';
         }
 
         html += `
@@ -2945,8 +2921,15 @@ function renderEarningsNewsDigest() {
                     </div>
                     <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">${earningsBadge}${sentimentBadge}</div>
                 </div>
-                ${newsHtml}
-                <div id="en-opinion-${stock.symbol}" style="margin-top:0.75rem;">${renderOpinionBlock(stock.symbol)}</div>
+                <div style="display:flex; gap:1.2rem; flex-wrap:wrap; margin-top:0.75rem;">
+                    <div style="flex:1 1 260px; min-width:220px;">
+                        ${newsHtml}
+                        <div id="en-opinion-${stock.symbol}" style="margin-top:0.75rem;">${renderOpinionBlock(stock.symbol)}</div>
+                    </div>
+                    <div style="flex:1 1 260px; min-width:220px; height:200px;">
+                        <div id="chart-en-${stock.symbol}" style="width:100%; height:100%;"></div>
+                    </div>
+                </div>
             </div>
         `;
     });
@@ -2954,7 +2937,8 @@ function renderEarningsNewsDigest() {
     html += '</div>';
     earningsNewsContainer.innerHTML = html;
 
-    maybeRequestEarningsAIForCandidates(candidates);
+    // El grafico se pinta despues de insertar el HTML (lightweight-charts necesita el div ya en el DOM).
+    candidates.forEach(c => renderChart(c.stock, `chart-en-${c.stock.symbol}`));
 }
 
 
