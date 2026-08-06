@@ -52,6 +52,7 @@ let portfolio = [];
 
 let closedTrades = [];
 const historialContainer = document.getElementById('historial-container');
+const earningsNewsContainer = document.getElementById('earnings-news-container');
 
 window.portfolioTerm = 'short'; // Plazo por defecto en la pestaña Mi Portafolio
 
@@ -769,10 +770,11 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'none';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         const heatmap = document.getElementById('marketHeatmap');
         if (heatmap) heatmap.style.display = 'none';
-        heatmap.previousElementSibling.style.display = 'none'; 
+        heatmap.previousElementSibling.style.display = 'none';
         document.querySelector('.tabs').style.display = 'none';
         return;
     }
@@ -790,7 +792,8 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'none';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         // Ocultar mapa de calor y pestañas si están logueados
         const heatmap = document.getElementById('marketHeatmap');
         if (heatmap) heatmap.style.display = 'none';
@@ -817,7 +820,8 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         renderPortfolio('user');
         return;
     } else if (currentTerm === 'historial') {
@@ -825,7 +829,8 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         renderHistorial('user');
         return;
 
@@ -834,7 +839,8 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'block';
         if (historialContainer) historialContainer.style.display = 'none';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         renderPortfolio('chatgpt');
         return;
     } else if (currentTerm === 'bot_historial') {
@@ -842,14 +848,25 @@ function refreshUI() {
         controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'block';
-        
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
+
         renderHistorial('bots');
-        return;        
-    } else {
-        container.style.display = ''; 
-        controlsContainer.style.display = ''; 
+        return;
+    } else if (currentTerm === 'earnings_news') {
+        container.style.display = 'none';
+        controlsContainer.style.display = 'none';
         portfolioContainer.style.display = 'none';
         if (historialContainer) historialContainer.style.display = 'none';
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'block';
+
+        renderEarningsNewsDigest();
+        return;
+    } else {
+        container.style.display = '';
+        controlsContainer.style.display = '';
+        portfolioContainer.style.display = 'none';
+        if (historialContainer) historialContainer.style.display = 'none';
+        if (earningsNewsContainer) earningsNewsContainer.style.display = 'none';
     }
 
     // --- Filter & Search Logic ---
@@ -1561,11 +1578,13 @@ function renderChart(data, canvasId) {
 
     container.innerHTML = ''; // Clear prev
 
-    const pointsToShow = -250;
+    const pointsToShow = -270; // debe ser >= HISTORY_WINDOW_DAYS en update-data.js para no recortar
     const dates = data.history.dates ? data.history.dates.slice(pointsToShow) : [];
     const prices = data.history.prices ? data.history.prices.slice(pointsToShow) : [];
     const ema20 = data.history.ema20 ? data.history.ema20.slice(pointsToShow) : [];
-    
+    const sma50 = data.history.sma50 ? data.history.sma50.slice(pointsToShow) : [];
+    const sma200 = data.history.sma200 ? data.history.sma200.slice(pointsToShow) : [];
+
     if (prices.length === 0) return;
 
     // Build Candlestick mock logic
@@ -1616,18 +1635,49 @@ function renderChart(data, canvasId) {
 
     candleSeries.setData(candleData);
 
-    // Add EMA if exists
+    // Media de corto plazo (EMA20)
     if (ema20.length > 0) {
         const emaData = [];
         for (let i = 0; i < dates.length; i++) {
-            if (ema20[i]) emaData.push({ time: dates[i], value: parseFloat(ema20[i]) });
+            if (ema20[i] != null) emaData.push({ time: dates[i], value: parseFloat(ema20[i]) });
         }
         const emaSeries = chart.addLineSeries({
-            color: 'rgba(59, 130, 246, 0.8)', // blue
+            color: 'rgba(59, 130, 246, 0.8)', // azul
             lineWidth: 1,
+            title: 'EMA 20 (Corto Plazo)',
             crosshairMarkerVisible: false,
         });
         emaSeries.setData(emaData);
+    }
+
+    // Media de mediano plazo (SMA50)
+    if (sma50.length > 0) {
+        const sma50Points = [];
+        for (let i = 0; i < dates.length; i++) {
+            if (sma50[i] != null) sma50Points.push({ time: dates[i], value: parseFloat(sma50[i]) });
+        }
+        const sma50Series = chart.addLineSeries({
+            color: 'rgba(234, 179, 8, 0.9)', // amarillo
+            lineWidth: 1,
+            title: 'SMA 50 (Mediano Plazo)',
+            crosshairMarkerVisible: false,
+        });
+        sma50Series.setData(sma50Points);
+    }
+
+    // Media de largo plazo (SMA200)
+    if (sma200.length > 0) {
+        const sma200Points = [];
+        for (let i = 0; i < dates.length; i++) {
+            if (sma200[i] != null) sma200Points.push({ time: dates[i], value: parseFloat(sma200[i]) });
+        }
+        const sma200Series = chart.addLineSeries({
+            color: 'rgba(168, 85, 247, 0.9)', // violeta
+            lineWidth: 2,
+            title: 'SMA 200 (Largo Plazo)',
+            crosshairMarkerVisible: false,
+        });
+        sma200Series.setData(sma200Points);
     }
 
     chart.timeScale().fitContent();
@@ -2718,6 +2768,190 @@ function renderHistorial(viewType = 'user') {
     `;
 
     historialContainer.innerHTML += statsHtml + tableHtml;
+}
+
+
+// --- APARTADO: BALANCES Y NOTICIAS (opiniones de IA) ---
+// Cache separado a proposito de window.aiPredictionCacheOpenAI: esta opinion es solo
+// informativa (balances/noticias) y NO debe alimentar el motor de scoring ni el bot real.
+window.aiEarningsOpinionCache = window.aiEarningsOpinionCache || {};
+window.pendingEarningsOpinion = window.pendingEarningsOpinion || new Set();
+
+const EARNINGS_NEWS_LOOKAHEAD_DAYS = 14; // balance a <=14 dias = candidato
+const EARNINGS_NEWS_SENTIMENT_THRESHOLD = 2; // |newsSentiment| >= 2 = candidato
+const AUTO_EARNINGS_AI_SESSION_CAP = 10;
+const AUTO_EARNINGS_AI_BATCH_SIZE = 3;
+const AUTO_EARNINGS_AI_COOLDOWN_MS = 20000;
+window.autoEarningsAICount = window.autoEarningsAICount || 0;
+let lastEarningsAIBatch = 0;
+
+function getEarningsNewsCandidates() {
+    const today = new Date();
+    return globalStocksData
+        .map(stock => {
+            let daysToEarnings = null;
+            if (stock.earningsDate) {
+                const eDate = new Date(stock.earningsDate);
+                if (!isNaN(eDate.getTime())) {
+                    daysToEarnings = Math.ceil((eDate - today) / (1000 * 60 * 60 * 24));
+                }
+            }
+            const sentiment = parseFloat(stock.newsSentiment) || 0;
+            const hasEarningsSoon = daysToEarnings !== null && daysToEarnings >= 0 && daysToEarnings <= EARNINGS_NEWS_LOOKAHEAD_DAYS;
+            const hasStrongNews = Math.abs(sentiment) >= EARNINGS_NEWS_SENTIMENT_THRESHOLD;
+            return { stock, daysToEarnings, sentiment, hasEarningsSoon, hasStrongNews };
+        })
+        .filter(c => c.hasEarningsSoon || c.hasStrongNews)
+        .sort((a, b) => {
+            // Balances mas inminentes primero, despues noticias mas fuertes
+            const aDays = a.hasEarningsSoon ? a.daysToEarnings : 999;
+            const bDays = b.hasEarningsSoon ? b.daysToEarnings : 999;
+            if (aDays !== bDays) return aDays - bDays;
+            return Math.abs(b.sentiment) - Math.abs(a.sentiment);
+        });
+}
+
+async function requestEarningsOpinion(symbol) {
+    if (window.aiEarningsOpinionCache[symbol] || window.pendingEarningsOpinion.has(symbol)) return;
+    const stockData = globalStocksData.find(s => s.symbol === symbol);
+    if (!stockData) return;
+
+    window.pendingEarningsOpinion.add(symbol);
+    updateEarningsOpinionCard(symbol, { loading: true });
+
+    try {
+        const response = await fetch(`${window.API_BASE_URL}/earnings-news-opinion`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol, stockData })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Error del servidor de IA (${response.status})`);
+        }
+
+        const result = await response.json();
+        window.aiEarningsOpinionCache[symbol] = result;
+    } catch (e) {
+        console.error(`Error pidiendo opinion IA de balances/noticias para ${symbol}:`, e);
+        window.aiEarningsOpinionCache[symbol] = { error: e.message };
+    } finally {
+        window.pendingEarningsOpinion.delete(symbol);
+        updateEarningsOpinionCard(symbol, {});
+    }
+}
+
+function maybeRequestEarningsAIForCandidates(candidates) {
+    if (window.autoEarningsAICount >= AUTO_EARNINGS_AI_SESSION_CAP) return;
+    const now = Date.now();
+    if (now - lastEarningsAIBatch < AUTO_EARNINGS_AI_COOLDOWN_MS) return;
+
+    const pending = candidates
+        .filter(c => !window.aiEarningsOpinionCache[c.stock.symbol] && !window.pendingEarningsOpinion.has(c.stock.symbol))
+        .slice(0, AUTO_EARNINGS_AI_BATCH_SIZE);
+
+    if (pending.length === 0) return;
+    lastEarningsAIBatch = now;
+
+    pending.forEach((c, i) => {
+        setTimeout(() => {
+            if (window.autoEarningsAICount >= AUTO_EARNINGS_AI_SESSION_CAP) return;
+            window.autoEarningsAICount++;
+            requestEarningsOpinion(c.stock.symbol);
+        }, i * 2500);
+    });
+}
+
+function renderOpinionBlock(symbol) {
+    const cached = window.aiEarningsOpinionCache[symbol];
+    const isPending = window.pendingEarningsOpinion.has(symbol);
+
+    if (isPending) {
+        return `<div class="ai-opinion-block ai-opinion-loading">🧠 Generando opinión de IA...</div>`;
+    }
+    if (!cached) {
+        return `<div class="ai-opinion-block">
+            <button class="action-btn" style="font-size:0.8rem; padding: 0.4rem 0.8rem;" onclick="window.requestEarningsOpinionManual('${symbol}')">🧠 Pedir opinión de IA</button>
+        </div>`;
+    }
+    if (cached.error) {
+        return `<div class="ai-opinion-block" style="color:var(--accent-red);">⚠️ No se pudo obtener la opinión de IA (${cached.error}).</div>`;
+    }
+
+    const tonoColor = cached.tono === 'POSITIVO' ? 'var(--accent-green)' : (cached.tono === 'NEGATIVO' ? 'var(--accent-red)' : 'var(--text-secondary)');
+    const riesgoColor = cached.riesgo === 'ALTO' ? 'var(--accent-red)' : (cached.riesgo === 'MEDIO' ? '#eab308' : 'var(--accent-green)');
+
+    return `<div class="ai-opinion-block">
+        <div style="display:flex; gap:0.5rem; margin-bottom:0.4rem;">
+            <span style="font-size:0.7rem; padding:2px 6px; border-radius:4px; border:1px solid ${riesgoColor}; color:${riesgoColor};">Riesgo: ${cached.riesgo || 'N/A'}</span>
+            <span style="font-size:0.7rem; padding:2px 6px; border-radius:4px; border:1px solid ${tonoColor}; color:${tonoColor};">Tono: ${cached.tono || 'N/A'}</span>
+        </div>
+        <p style="font-size:0.85rem; color:var(--text-primary); margin:0;">🧠 ${cached.opinion || 'Sin opinión disponible.'}</p>
+    </div>`;
+}
+
+function updateEarningsOpinionCard(symbol, opts) {
+    const block = document.getElementById(`en-opinion-${symbol}`);
+    if (!block) return;
+    block.innerHTML = renderOpinionBlock(symbol);
+}
+
+window.requestEarningsOpinionManual = (symbol) => {
+    requestEarningsOpinion(symbol);
+};
+
+function renderEarningsNewsDigest() {
+    if (!earningsNewsContainer) return;
+
+    const candidates = getEarningsNewsCandidates();
+
+    if (candidates.length === 0) {
+        earningsNewsContainer.innerHTML = `
+            <h3 style="margin-bottom: 1rem;">📰 Balances y Noticias</h3>
+            <p style="color:var(--text-secondary);">No hay acciones con balance en los próximos ${EARNINGS_NEWS_LOOKAHEAD_DAYS} días ni noticias con sentimiento fuerte en este momento.</p>
+        `;
+        return;
+    }
+
+    let html = `<h3 style="margin-bottom: 0.3rem;">📰 Balances y Noticias</h3>
+        <p style="color:var(--text-secondary); font-size:0.85rem; margin-bottom:1rem;">Acciones con balance en los próximos ${EARNINGS_NEWS_LOOKAHEAD_DAYS} días o con noticias de sentimiento fuerte. Las opiniones de IA no afectan el puntaje técnico ni al bot de trading.</p>
+        <div style="display:flex; flex-direction:column; gap:1rem;">`;
+
+    candidates.forEach(c => {
+        const stock = c.stock;
+        const earningsBadge = c.hasEarningsSoon
+            ? `<span style="font-size:0.75rem; padding:2px 8px; border-radius:4px; background:rgba(234,179,8,0.15); color:#eab308;">📅 Balance en ${c.daysToEarnings} día(s)</span>`
+            : '';
+        const sentimentBadge = c.hasStrongNews
+            ? `<span style="font-size:0.75rem; padding:2px 8px; border-radius:4px; background:${c.sentiment > 0 ? 'rgba(16,163,127,0.15)' : 'rgba(239,68,68,0.15)'}; color:${c.sentiment > 0 ? 'var(--accent-green)' : 'var(--accent-red)'};">📰 Noticias ${c.sentiment > 0 ? 'positivas' : 'negativas'} (${c.sentiment})</span>`
+            : '';
+
+        let newsHtml = '';
+        if (Array.isArray(stock.newsList) && stock.newsList.length > 0) {
+            newsHtml = '<ul style="margin:0.5rem 0 0 0; padding-left: 1.2rem; font-size:0.85rem; color:var(--text-secondary);">' +
+                stock.newsList.slice(0, 3).map(n => `<li><a href="${n.link || '#'}" target="_blank" rel="noopener" style="color:inherit;">${n.title}</a></li>`).join('') +
+                '</ul>';
+        }
+
+        html += `
+            <div class="card" style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+                    <div>
+                        <b style="font-size:1rem;">${stock.symbol}</b>
+                        <span style="color:var(--text-secondary); font-size:0.85rem;"> — ${stock.name || ''}</span>
+                    </div>
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">${earningsBadge}${sentimentBadge}</div>
+                </div>
+                ${newsHtml}
+                <div id="en-opinion-${stock.symbol}" style="margin-top:0.75rem;">${renderOpinionBlock(stock.symbol)}</div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    earningsNewsContainer.innerHTML = html;
+
+    maybeRequestEarningsAIForCandidates(candidates);
 }
 
 
