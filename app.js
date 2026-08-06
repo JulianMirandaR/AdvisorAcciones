@@ -1642,10 +1642,11 @@ function renderChart(data, canvasId) {
             if (ema20[i] != null) emaData.push({ time: dates[i], value: parseFloat(ema20[i]) });
         }
         const emaSeries = chart.addLineSeries({
-            color: 'rgba(59, 130, 246, 0.8)', // azul
+            color: 'rgba(59, 130, 246, 0.8)', // azul = EMA 20 (Corto Plazo)
             lineWidth: 1,
-            title: 'EMA 20 (Corto Plazo)',
             crosshairMarkerVisible: false,
+            lastValueVisible: false, // sin caja de valor ni titulo flotando sobre el grafico
+            priceLineVisible: false,
         });
         emaSeries.setData(emaData);
     }
@@ -1657,10 +1658,11 @@ function renderChart(data, canvasId) {
             if (sma50[i] != null) sma50Points.push({ time: dates[i], value: parseFloat(sma50[i]) });
         }
         const sma50Series = chart.addLineSeries({
-            color: 'rgba(234, 179, 8, 0.9)', // amarillo
+            color: 'rgba(234, 179, 8, 0.9)', // amarillo = SMA 50 (Mediano Plazo)
             lineWidth: 1,
-            title: 'SMA 50 (Mediano Plazo)',
             crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
         });
         sma50Series.setData(sma50Points);
     }
@@ -1672,10 +1674,11 @@ function renderChart(data, canvasId) {
             if (sma200[i] != null) sma200Points.push({ time: dates[i], value: parseFloat(sma200[i]) });
         }
         const sma200Series = chart.addLineSeries({
-            color: 'rgba(168, 85, 247, 0.9)', // violeta
+            color: 'rgba(168, 85, 247, 0.9)', // violeta = SMA 200 (Largo Plazo)
             lineWidth: 2,
-            title: 'SMA 200 (Largo Plazo)',
             crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
         });
         sma200Series.setData(sma200Points);
     }
