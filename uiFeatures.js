@@ -71,21 +71,6 @@ Sesgo: ${result.bias}
     }
 }
 
-// 🔥 Interpretación automática (MUY útil)
-function interpretAI(result) {
-    if (result.uncertainty > 0.15) {
-        return "Señal poco confiable (alta variabilidad entre predicciones).";
-    }
-    if (result.probability > 0.6 && result.uncertainty < 0.08) {
-        return "Señal fuerte y consistente.";
-    }
-    if (result.probability < 0.4 && result.uncertainty < 0.08) {
-        return "Sesgo bajista consistente.";
-    }
-    return "Señal moderada, requiere confirmación técnica.";
-}
-
-
 // ================== NEWS ==================
 
 export function handleOpenNewsModal(symbol, globalStocksData) {

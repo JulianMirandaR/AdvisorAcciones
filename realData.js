@@ -1,6 +1,6 @@
 // Servicio para obtener datos desde Firebase (Los datos son actualizados diariamente por el backend / GitHub Actions)
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
-import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 
 // Obtener configuración de Firebase desde el backend para evitar exponer claves en el código
@@ -24,22 +24,26 @@ export class RealDataService {
 
     async getLatestFirestoreData() {
         try {
-            // Intentar obtener el documento de hoy, si no, el de ayer, hasta 7 días atrás
-            // para no requerir un índice compuesto o descendente en __name__ que rompe la app
+            // Intentar obtener los datos de hoy, si no, los de ayer, hasta 7 días atrás
+            // para no requerir un índice compuesto o descendente en __name__ que rompe la app.
+            // Cada acción vive en su propio documento dentro de "stocks/{fecha}/symbols/{simbolo}"
+            // (antes era un solo documento con las ~60 acciones como campos, lo que chocaba
+            // contra el límite de 1MiB de Firestore y hacía que algunas dejaran de guardarse).
             for (let i = 0; i < 7; i++) {
                 const d = new Date();
                 d.setUTCDate(d.getUTCDate() - i);
                 const dateStr = d.toISOString().split('T')[0];
 
-                const docRef = doc(this.db, "stocks", dateStr);
-                const docSnap = await getDoc(docRef);
+                const symbolsSnap = await getDocs(collection(this.db, "stocks", dateStr, "symbols"));
 
-                if (docSnap.exists()) {
-                    // Registrar la fecha real del documento y cuántos días de antigüedad tiene,
+                if (!symbolsSnap.empty) {
+                    // Registrar la fecha real de los datos y cuántos días de antigüedad tiene,
                     // para poder avisar al usuario si está operando con datos viejos.
                     this.lastDocDate = dateStr;
                     this.lastDocAgeDays = i;
-                    return docSnap.data();
+                    const stocksDataMap = {};
+                    symbolsSnap.forEach(symbolDoc => { stocksDataMap[symbolDoc.id] = symbolDoc.data(); });
+                    return stocksDataMap;
                 }
             }
             return null;

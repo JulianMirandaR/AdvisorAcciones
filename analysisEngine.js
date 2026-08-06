@@ -35,7 +35,7 @@ export function getMarketCondition(vix) {
 }
 
 // --- 2. TIMEFRAME & STRATEGY ENGINE ---
-function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo) {
+function analyzeTimeframe(data, isLongTerm, regime, strategyMode) {
     let factors = { trend: 0, momentum: 0, reversal: 0, macro: 0, risk: 0, news: 0 };
     let reasons = [];
     let setupDetected = null;
@@ -58,10 +58,17 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     const rvol = vol / avgVol;
     const atr = parseFloat(data.atr) || (price * 0.02); // Fallback a 2% si falla backend
     
-    // History prices for Momentum
+    // History prices for Momentum. RealDataService ya parsea data.history de string a objeto
+    // antes de llegar acá, pero si algún día se llama a este motor con datos crudos de Firestore
+    // (history todavía como string JSON), esto evita que la momentum/breakout logic se degrade
+    // en silencio a prices=[] sin ningún error visible (mismo defensive-parse que botEngine.js).
     let prices = [];
-    if (data.history && data.history.prices && data.history.prices.length >= 5) {
-        prices = data.history.prices;
+    let historyObj = data.history;
+    if (typeof historyObj === 'string') {
+        try { historyObj = JSON.parse(historyObj); } catch (e) { historyObj = null; }
+    }
+    if (historyObj && historyObj.prices && historyObj.prices.length >= 5) {
+        prices = historyObj.prices;
     }
     const p1 = prices.length >= 2 ? parseFloat(prices[prices.length - 2]) : price;
     const p5 = prices.length >= 6 ? parseFloat(prices[prices.length - 6]) : price;
@@ -282,11 +289,19 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode, portfolioInfo)
     };
 }
 
+// OJO: la firma de esta función NO coincide en orden/significado con la de
+// AdvisorAccionesBackend/scripts/botEngine.js (backend: data, marketCondition, portfolioInfo,
+// aiData, strategyMode). Es intencional, no un desprolijidad para "prolijar" en algún momento:
+// esta versión toma un STRING selector ('auto'/'openai'/'legacy') y busca el dato de IA ya
+// cacheado en window.aiPredictionCache*, y lee window.strategyMode en vez de recibirlo como
+// parámetro, porque corre en el navegador con esos caches globales por símbolo. El backend no
+// tiene "window" ni esos caches: recibe el resultado de IA de una sola llamada, directo como
+// objeto. NO copiar/pegar llamadas entre los dos archivos asumiendo que la firma es intercambiable.
 export function analyzeStockWithMarketCondition(data, termIgnored, marketCondition = 'SIDEWAYS', portfolioInfo = null, aiPreference = 'auto') {
     const strategyMode = window.strategyMode || 'hybrid';
     
-    const cp = analyzeTimeframe(data, false, marketCondition, strategyMode, portfolioInfo);
-    const lp = analyzeTimeframe(data, true, marketCondition, strategyMode, portfolioInfo);
+    const cp = analyzeTimeframe(data, false, marketCondition, strategyMode);
+    const lp = analyzeTimeframe(data, true, marketCondition, strategyMode);
     
     // Conflicto Clave (CP alcista vs LP bajista, etc)
     let isConflict = false;

@@ -251,16 +251,16 @@ window.saveIolSettings = async () => {
     
     window.iolUsername = usernameVal;
     window.iolPassword = passwordVal;
-    
+
     document.getElementById('iolSettingsModal').style.display = 'none';
-    
+
     window.addNotification(`🔑 Cuenta de InvertirOnline conectada. Intentando autenticación...`, "info");
-    
+
     if (window.cloudSynced) {
         console.log("☁️ Sincronizando credenciales de IOL con la nube...");
-        await window.syncDataToFirebase();
+        await persistIolCredentials(usernameVal, passwordVal);
     }
-    
+
     await updateIolStatus();
 };
 
@@ -1836,7 +1836,8 @@ onAuthStateChanged(auth, async (user) => {
                 
                 if (d.closedTrades) closedTrades = d.closedTrades;
                 if (d.iolUsername) window.iolUsername = d.iolUsername;
-                if (d.iolPassword) window.iolPassword = d.iolPassword;
+                // El backend ya no devuelve iolPassword en /api/user/data (ver openAiServer.js);
+                // el estado de conexión real se consulta aparte vía updateIolStatus() más abajo.
                 if (d.autoTradingChatGPTEnabled !== undefined) window.autoTradingChatGPTEnabled = d.autoTradingChatGPTEnabled;
             }
             await updateIolStatus();
@@ -1864,12 +1865,35 @@ onAuthStateChanged(auth, async (user) => {
     }
 });
 
+// Guarda credenciales de IOL por separado de la sincronización general: el backend ya no nos
+// devuelve iolPassword (para no tenerla dando vueltas en window/el navegador), así que si la
+// sync general la mandara igual como window.iolPassword || '', cada sync rutinario (hay decenas
+// de sitios que llaman a syncDataToFirebase por cualquier cambio menor) pisaría la contraseña
+// real guardada en Firestore con un string vacío y rompería el trading real. Solo esta función,
+// llamada con el valor recién tipeado por el usuario, actualiza iolUsername/iolPassword.
+async function persistIolCredentials(username, password) {
+    if (!auth.currentUser) return;
+    try {
+        await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${auth.currentUser.uid}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-uid': auth.currentUser.uid
+            },
+            credentials: 'include',
+            body: JSON.stringify({ iolUsername: username, iolPassword: password })
+        });
+    } catch (e) {
+        console.error("Error guardando credenciales de IOL", e);
+    }
+}
+
 window.syncDataToFirebase = async function() {
    if (!auth.currentUser) return;
    try {
        await fetch(`https://advisoraccionesbackend-production.up.railway.app/api/user/data?uid=${auth.currentUser.uid}`, {
            method: 'POST',
-           headers: { 
+           headers: {
                'Content-Type': 'application/json',
                'x-uid': auth.currentUser.uid
            },
@@ -1888,10 +1912,10 @@ window.syncDataToFirebase = async function() {
                lastKnownSignals: window.lastKnownSignals,
                unreadNotifs: window.unreadNotifs,
                lastBotExecution: window.lastBotExecution,
-               
+
                closedTrades: closedTrades,
-               iolUsername: window.iolUsername || '',
-               iolPassword: window.iolPassword || ''
+               iolUsername: window.iolUsername || ''
+               // iolPassword deliberadamente NO va acá, ver persistIolCredentials arriba.
            })
        });
    } catch(e) {
@@ -3142,7 +3166,7 @@ window.disconnectIol = async () => {
     window.iolUsername = "";
     window.iolPassword = "";
     if (window.cloudSynced) {
-        await window.syncDataToFirebase();
+        await persistIolCredentials("", "");
     }
     await updateIolStatus();
     document.getElementById("iolSettingsModal").style.display = "none";
