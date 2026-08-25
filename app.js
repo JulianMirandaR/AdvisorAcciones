@@ -497,6 +497,51 @@ function validateEntry(analysis, symbol) {
     return { valid: true };
 }
 
+// --- DIVERGENCIA ALCISTA DE RSI (RSI en sobreventa + divergencia con el precio) ---
+// Heuristica simple, no una deteccion rigurosa de pivotes/fractales: compara el minimo de precio
+// mas reciente contra el minimo previo dentro de la ventana. Si el precio iguala/hace un minimo
+// nuevo pero el RSI en ese punto queda POR ENCIMA del RSI que tuvo en el minimo previo, el impulso
+// bajista se esta debilitando aunque el precio siga cayendo - la divergencia clasica de reversion.
+const RSI_DIVERGENCE_LOOKBACK_DAYS = 20;
+const RSI_OVERSOLD_THRESHOLD = 30;
+
+function detectBullishRsiDivergence(data) {
+    const hist = data.history;
+    if (!hist || !Array.isArray(hist.prices) || !Array.isArray(hist.rsi)) return false;
+    if (hist.prices.length < RSI_DIVERGENCE_LOOKBACK_DAYS || hist.rsi.length < RSI_DIVERGENCE_LOOKBACK_DAYS) return false;
+
+    const prices = hist.prices.slice(-RSI_DIVERGENCE_LOOKBACK_DAYS).map(Number);
+    const rsis = hist.rsi.slice(-RSI_DIVERGENCE_LOOKBACK_DAYS).map(v => (v == null ? null : Number(v)));
+
+    const currentPrice = prices[prices.length - 1];
+    const currentRsi = rsis[rsis.length - 1];
+    if (isNaN(currentPrice) || currentRsi == null || isNaN(currentRsi)) return false;
+
+    // Minimo de precio previo dentro de la ventana, sin contar el dia de hoy.
+    let priorLowIdx = -1;
+    let priorLowPrice = Infinity;
+    for (let i = 0; i < prices.length - 1; i++) {
+        if (!isNaN(prices[i]) && prices[i] < priorLowPrice) {
+            priorLowPrice = prices[i];
+            priorLowIdx = i;
+        }
+    }
+    if (priorLowIdx === -1 || rsis[priorLowIdx] == null || isNaN(rsis[priorLowIdx])) return false;
+
+    const priceHizoMinimoIgualOMenor = currentPrice <= priorLowPrice * 1.005; // 0.5% de tolerancia
+    const rsiHizoMinimoMasAlto = currentRsi > rsis[priorLowIdx];
+
+    return priceHizoMinimoIgualOMenor && rsiHizoMinimoMasAlto;
+}
+
+// Combina la divergencia con RSI en sobreventa (el par que efectivamente se usa como aviso de
+// oportunidad; una divergencia sin sobreventa es mucho menos significativa).
+function hasOversoldBullishDivergence(data) {
+    const rsiNow = parseFloat(data.rsi);
+    if (isNaN(rsiNow) || rsiNow >= RSI_OVERSOLD_THRESHOLD) return false;
+    return detectBullishRsiDivergence(data);
+}
+
 // --- AUTO-IA PARA TOP-N CANDIDATOS ---
 // Antes la confirmación de OpenAI había que pedirla a mano en cada tarjeta, por lo que en la
 // vista general la fusión bayesiana nunca se aplicaba. Esto la dispara automáticamente para
@@ -562,18 +607,25 @@ function checkNotifications(force = false) {
         const userAnalysis = analyzeStockWithMarketCondition(stock, 'all', marketCondition, portfolioInfo, 'auto');
         const userSig = userAnalysis.signal;
 
-        // Alertas visuales para el usuario (Exclusivamente "COMPRA FUERTE")
+        // Ya no se avisa "COMPRA FUERTE" por notificación: esa señal ya se ve directamente en
+        // la pantalla principal (tarjetas de acciones), avisarla de nuevo era redundante.
+
+        // Alerta de divergencia alcista de RSI + sobreventa (ver detectBullishRsiDivergence más
+        // arriba). Se avisa una sola vez por aparición de la condición, no en cada refresh
+        // mientras se siga cumpliendo (se vuelve a poder avisar si primero desaparece).
         if (!portfolioPos) {
-            const isNewStrongBuySignal = (userSig === 'COMPRA FUERTE') && prevSignal !== 'COMPRA FUERTE';
-            // Filtro de validez de entrada: no alertar si hay conflicto de plazos o
-            // volatilidad extrema (VIX > 35). Antes esta validación era código muerto.
-            const entryCheck = validateEntry(userAnalysis, stock.symbol);
-            if (isNewStrongBuySignal && entryCheck.valid) {
-                if (userAnalysis.confirmationLevel === 'ALTA CONFIANZA') {
-                    window.addNotification(`🚀 OPORTUNIDAD: ${stock.symbol} generó señal de COMPRA FUERTE (Confirmada con IA).`, 'buy', stock.symbol);
-                } else {
-                    window.addNotification(`📈 OPORTUNIDAD: ${stock.symbol} generó señal de COMPRA FUERTE.`, 'buy', stock.symbol);
+            window.lastDivergenceAlertSymbols = window.lastDivergenceAlertSymbols || new Set();
+            const hasDivergence = hasOversoldBullishDivergence(stock);
+            if (hasDivergence && !window.lastDivergenceAlertSymbols.has(stock.symbol)) {
+                // Mismo filtro de validez que se usaba para "COMPRA FUERTE": no avisar en
+                // conflicto de plazos o volatilidad extrema (VIX > 35).
+                const entryCheck = validateEntry(userAnalysis, stock.symbol);
+                if (entryCheck.valid) {
+                    window.lastDivergenceAlertSymbols.add(stock.symbol);
+                    window.addNotification(`🔄 ${stock.symbol}: Divergencia alcista de RSI en zona de sobreventa (RSI ${parseFloat(stock.rsi).toFixed(1)}).`, 'buy', stock.symbol);
                 }
+            } else if (!hasDivergence) {
+                window.lastDivergenceAlertSymbols.delete(stock.symbol);
             }
         }
 
@@ -1020,6 +1072,12 @@ function createCardHTML(item) {
         setupHtml = `<div style="margin-top:0.5rem;"><span style="background: var(--accent-blue); color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 0 8px var(--accent-blue);">🔥 SETUP DE ALTA PROBABILIDAD (${analysis.setupDetected.toUpperCase()})</span></div>`;
     }
 
+    // Divergencia alcista de RSI + sobreventa
+    let divergenceHtml = '';
+    if (hasOversoldBullishDivergence(data)) {
+        divergenceHtml = `<div style="margin-top:0.5rem;"><span style="background: #a855f7; color: #fff; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 0 8px #a855f7;" title="El precio hizo un mínimo igual o más bajo, pero el RSI marcó un mínimo más alto que el anterior: el impulso bajista se está debilitando.">🔄 DIVERGENCIA ALCISTA RSI (Sobreventa)</span></div>`;
+    }
+
     // Real Earnings logic
     let earningsHtml = '';
     if (data.earningsDate) {
@@ -1069,6 +1127,7 @@ function createCardHTML(item) {
                 <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
             </div>
             ${setupHtml}
+            ${divergenceHtml}
             ${earningsHtml}
         </div>
 
