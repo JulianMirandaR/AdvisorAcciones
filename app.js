@@ -1177,6 +1177,11 @@ function createCardHTML(item) {
         <div class="chart-wrapper" ondblclick="openTradingViewModal('${data.symbol}')" style="cursor: pointer; transition: 0.2s; height: 180px; margin-top: 1rem;" onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'" title="Doble Click para Análisis Profundo">
             <div id="chart-${data.symbol}" style="width: 100%; height: 100%;"></div>
         </div>
+        <div style="display:flex; gap:0.8rem; justify-content:center; flex-wrap:wrap; margin-top:0.4rem; font-size:0.68rem; color:var(--text-secondary);">
+            <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:rgba(59,130,246,0.9); margin-right:3px;"></span>EMA 20 (Corto)</span>
+            <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:rgba(234,179,8,0.9); margin-right:3px;"></span>SMA 50 (Mediano)</span>
+            <span><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:rgba(168,85,247,0.9); margin-right:3px;"></span>SMA 200 (Largo)</span>
+        </div>
     `;
     return card;
 }
