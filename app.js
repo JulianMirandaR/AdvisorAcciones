@@ -2461,12 +2461,12 @@ window.openTradingViewModal = (symbol) => {
 
     modalBody.innerHTML = `
         <h2 style="margin-bottom: 1rem; color: var(--text-primary);">Análisis Técnico de ${symbol}</h2>
-        <div style="height: 500px; width: 100%; border-radius: 8px; overflow: hidden; background: #000;">
+        <div style="height: 700px; width: 100%; border-radius: 8px; overflow: hidden; background: #000;">
             <div class="tradingview-widget-container" style="height:100%;width:100%">
               <div id="tradingview_${symbol.replace('.','')}" style="height:100%;width:100%"></div>
             </div>
         </div>
-        <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-secondary);">Gráfico interactivo proveído por TradingView. Puedes dibujar, agregar indicadores técnicos y modificar la temporalidad libremente acá arriba.</p>
+        <p style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-secondary);">Gráfico interactivo proveído por TradingView, con RSI (líneas en 30/70) y MACD precargados debajo del precio. Puedes dibujar, agregar más indicadores y modificar la temporalidad libremente acá arriba.</p>
     `;
     
     modal.style.display = 'block';
@@ -2489,6 +2489,12 @@ window.openTradingViewModal = (symbol) => {
           "hide_top_toolbar": false,
           "hide_legend": false,
           "save_image": false,
+          // RSI (con bandas 30/70 por defecto) y MACD precargados como paneles debajo del
+          // precio, para no tener que agregarlos a mano cada vez que se abre el modal.
+          "studies": [
+            "RSI@tv-basicstudies",
+            "MACD@tv-basicstudies"
+          ],
           "container_id": `tradingview_${symbol.replace('.','')}`,
         });
     };
