@@ -289,6 +289,77 @@ function analyzeTimeframe(data, isLongTerm, regime, strategyMode) {
     };
 }
 
+// --- ENTRY ZONE ENGINE ---
+// Deriva un plan de entrada CONCRETO (rango de precio de compra, precio máximo a pagar,
+// stop, objetivo y ratio riesgo/beneficio) a partir de soporte/resistencia/EMA20/SMA50 y
+// el ATR (volatilidad). Convierte el "QUÉ comprar" del score en un "CUÁNDO / A QUÉ PRECIO".
+// NO es una orden ni asesoramiento: es una referencia de gestión de riesgo.
+export function computeEntryZone(data) {
+    const price = parseFloat(data.price) || 0;
+    if (!price) return null;
+    const atr = parseFloat(data.atr) || (price * 0.02);
+    const ema20 = parseFloat(data.ema20) || 0;
+    const sma50 = parseFloat(data.sma50) || 0;
+    let support = parseFloat(data.support);
+    let resistance = parseFloat(data.resistance);
+    if (isNaN(support)) support = 0;
+    if (isNaN(resistance)) resistance = 0;
+
+    // Ancla de entrada: el nivel de "valor" más cercano por DEBAJO (o en) el precio actual.
+    // Preferimos soporte; si no sirve, EMA20; si no, SMA50; último recurso price - 1 ATR.
+    const candidates = [];
+    if (support > 0 && support <= price) candidates.push({ v: support, label: 'soporte' });
+    if (ema20 > 0 && ema20 <= price) candidates.push({ v: ema20, label: 'EMA20' });
+    if (sma50 > 0 && sma50 <= price) candidates.push({ v: sma50, label: 'SMA50' });
+    let anchor, anchorLabel;
+    if (candidates.length) {
+        // El más cercano al precio actual = mejor referencia de pullback sano.
+        candidates.sort((a, b) => (price - a.v) - (price - b.v));
+        anchor = candidates[0].v; anchorLabel = candidates[0].label;
+    } else {
+        anchor = price - atr; anchorLabel = 'precio − 1 ATR';
+    }
+
+    const idealLow = anchor - atr * 0.3;   // tolerancia por mecha debajo del ancla
+    const idealHigh = anchor + atr * 0.5;  // no perseguir mucho por encima del ancla
+    const max = anchor + atr * 1.0;        // precio máximo razonable a pagar (más = perseguir)
+    const stopBase = (support > 0 && support < anchor) ? support : anchor;
+    const stop = stopBase - atr * 1.5;     // stop bajo la estructura de soporte
+    const target = (resistance > price) ? resistance : price + atr * 3; // objetivo a resistencia
+
+    const entryRef = Math.min(price, idealHigh); // referencia realista de entrada para R/R
+    const risk = entryRef - stop;
+    const reward = target - entryRef;
+    const rr = risk > 0 ? reward / risk : 0;
+
+    let status, note;
+    if (price >= idealLow && price <= idealHigh) {
+        status = 'EN_ZONA';
+        note = `El precio está en la zona ideal de compra (cerca del ${anchorLabel}). Confirmá con volumen antes de entrar.`;
+    } else if (price > max) {
+        status = 'EXTENDIDO';
+        note = `El precio está extendido por encima de la zona. Perseguir acá empeora el riesgo/beneficio: conviene esperar un retroceso hacia el ${anchorLabel}.`;
+    } else if (price > idealHigh) {
+        status = 'ACEPTABLE';
+        note = `Precio aceptable pero no óptimo. Podés hacer una entrada parcial o esperar un pullback al ${anchorLabel}.`;
+    } else {
+        status = 'DEBAJO';
+        note = `El precio está por debajo del ${anchorLabel}: puede ser oportunidad o quiebre bajista. Esperá señal de frenado (vela de reversión + volumen) antes de entrar.`;
+    }
+
+    return {
+        anchorLabel,
+        idealLow: Number(idealLow.toFixed(2)),
+        idealHigh: Number(idealHigh.toFixed(2)),
+        max: Number(max.toFixed(2)),
+        stop: Number(Math.max(0, stop).toFixed(2)),
+        target: Number(target.toFixed(2)),
+        rr: Number(rr.toFixed(2)),
+        status,
+        note
+    };
+}
+
 // OJO: la firma de esta función NO coincide en orden/significado con la de
 // AdvisorAccionesBackend/scripts/botEngine.js (backend: data, marketCondition, portfolioInfo,
 // aiData, strategyMode). Es intencional, no un desprolijidad para "prolijar" en algún momento:
@@ -386,6 +457,18 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
         if (finalScore > 6.0) finalScore = 6.0;
     }
 
+    // --- CAP POR DATOS DESACTUALIZADOS ---
+    // El dato de Firestore puede tener varios días (realData busca hasta 7 atrás). Hacer
+    // timing de compra sobre un precio de hace >1 día es peligroso: capamos a "OBSERVAR"
+    // (máx 1.5) para no gatillar una COMPRA sobre información vieja. No afecta al backtest,
+    // que consume corto_plazo.techProb (de analyzeTimeframe), no este finalScore.
+    let staleData = false;
+    const dataAge = (typeof window !== 'undefined' && typeof window.dataAgeDays === 'number') ? window.dataAgeDays : 0;
+    if (dataAge > 1) {
+        staleData = true;
+        if (finalScore > 1.5) finalScore = 1.5;
+    }
+
     // Manejo de Portafolio (Trailing Stop dinámico con ATR)
     let actionFlag = null;
     let trailingReason = null;
@@ -449,6 +532,7 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
 
     let combinedReasons = [];
     if (trailingReason) combinedReasons.push(trailingReason);
+    if (staleData) combinedReasons.push({ text: `Datos de hace ${dataAge} día(s): señal limitada a OBSERVAR hasta actualizar precios.`, type: "negative", weight: 170 });
     if (earningsRisk !== null) combinedReasons.push({ text: `Balance en ${earningsRisk} día(s): riesgo binario, señal limitada.`, type: "negative", weight: 160 });
     if (isConflict) combinedReasons.push({ text: `CONFLICTO: ${conflictMsg}`, type: "neutral", weight: 150 });
     
@@ -473,6 +557,9 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
         setupDetected: finalSetup,
         actionFlag,
         earningsRisk,
+        staleData,
+        dataAge,
+        entryZone: computeEntryZone(data),
         ai: aiContext,
         confirmationLevel
     };

@@ -1066,6 +1066,35 @@ function createCardHTML(item) {
         `;
     }
 
+    // Plan de Entrada (zona de compra, máximo a pagar, stop, objetivo, R/R)
+    let entryZoneHtml = '';
+    if (analysis.entryZone && !analysis.signal.includes('VENTA') && !analysis.signal.includes('DEBIL')) {
+        const ez = analysis.entryZone;
+        const statusMap = {
+            'EN_ZONA':   { c: 'var(--accent-green)', t: '🎯 EN ZONA DE COMPRA' },
+            'ACEPTABLE': { c: '#eab308',             t: '🟡 PRECIO ACEPTABLE' },
+            'EXTENDIDO': { c: 'var(--accent-red)',   t: '⏳ EXTENDIDO — ESPERAR PULLBACK' },
+            'DEBAJO':    { c: 'var(--accent-blue)',  t: '🔍 BAJO SOPORTE — ESPERAR FRENADO' }
+        };
+        const st = statusMap[ez.status] || statusMap['ACEPTABLE'];
+        const rrColor = ez.rr >= 2 ? 'var(--accent-green)' : (ez.rr >= 1 ? '#eab308' : 'var(--accent-red)');
+        entryZoneHtml = `
+        <div style="margin-top:1rem; padding:0.7rem; border:1px solid ${st.c}; border-radius:6px; background:rgba(255,255,255,0.02);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; gap:0.5rem; flex-wrap:wrap;">
+                <span style="font-size:0.72rem; font-weight:bold; color:var(--text-secondary);">🧭 PLAN DE ENTRADA</span>
+                <span style="font-size:0.72rem; font-weight:bold; color:${st.c};">${st.t}</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; font-size:0.75rem;">
+                <div>🟢 Zona ideal: <b>$${ez.idealLow} – $${ez.idealHigh}</b></div>
+                <div>🚫 Máx. a pagar: <b>$${ez.max}</b></div>
+                <div>🛑 Stop sugerido: <b style="color:var(--accent-red)">$${ez.stop}</b></div>
+                <div>🎯 Objetivo: <b style="color:var(--accent-green)">$${ez.target}</b></div>
+                <div style="grid-column:1/3;">⚖️ Riesgo/Beneficio: <b style="color:${rrColor}">${ez.rr}:1</b>${ez.rr < 1 ? ' <span style="color:var(--accent-red)">(desfavorable)</span>' : ''}</div>
+            </div>
+            <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.5rem; line-height:1.3;">${ez.note}</div>
+        </div>`;
+    }
+
     // Setup badge if generated
     let setupHtml = '';
     if (analysis.setupDetected) {
@@ -1130,6 +1159,8 @@ function createCardHTML(item) {
             ${divergenceHtml}
             ${earningsHtml}
         </div>
+
+        ${entryZoneHtml}
 
         <div class="analysis-grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem; margin-bottom:1rem;">
             <div style="background:var(--card-bg); padding:0.5rem; border-radius:4px; border:1px solid var(--border-color);">

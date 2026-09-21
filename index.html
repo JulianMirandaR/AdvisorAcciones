@@ -76,6 +76,7 @@
                         <input type="text" id="searchInput" placeholder="Buscar acción (ej. AAPL)...">
                         <button type="button" id="searchClearBtn" class="search-clear-btn" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">&times;</button>
                     </div>
+                    <button type="button" onclick="document.getElementById('entryGuideModal').style.display='flex'" style="background: var(--hover-bg); border: 1px solid var(--accent-blue); color: var(--accent-blue); padding: 0.5rem 0.9rem; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.85rem; white-space: nowrap;" title="Guía: cómo elegir el momento exacto de compra">📘 ¿Cuándo comprar?</button>
                     <div class="filters">
                         <button class="filter-btn active" data-filter="all">Todas</button>
                         <button class="filter-btn" data-filter="buy">Comprar</button>
@@ -350,6 +351,66 @@
                     </div>
                     <div id="iolTestResult" style="display: none; padding: 0.8rem; border-radius: 4px; font-size: 0.75rem; text-align: left; margin-top: 1rem; word-break: break-all;"></div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Guía: ¿Cuándo comprar? Modal -->
+        <div id="entryGuideModal" class="modal">
+            <div class="modal-content" style="max-width: 760px; text-align: left;">
+                <span style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('entryGuideModal').style.display='none'">&times;</span>
+                <h2 style="margin-bottom: 0.3rem;">📘 ¿Cuándo comprar? El momento exacto de entrada</h2>
+                <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.2rem;">El score te dice <b>QUÉ</b> acción tiene buen setup. Esta guía te ayuda a decidir <b>CUÁNDO</b> apretar comprar. La señal es del cierre anterior: el "cuándo" lo confirmás vos con estos pasos.</p>
+
+                <div style="background: rgba(59,130,246,0.08); border: 1px solid var(--accent-blue); border-radius: 6px; padding: 1rem; margin-bottom: 1.2rem;">
+                    <div style="font-weight: bold; color: var(--accent-blue); margin-bottom: 0.6rem;">✅ Checklist antes de comprar (todos deberían dar SÍ)</div>
+                    <ol style="margin: 0; padding-left: 1.2rem; font-size: 0.88rem; line-height: 1.7; color: var(--text-primary);">
+                        <li>La señal es <b>COMPRA / COMPRA FUERTE</b> (o PRE-COMPRA con setup claro).</li>
+                        <li>El precio EN VIVO está dentro de la <b>Zona ideal</b> del Plan de Entrada (no por encima del "Máx. a pagar").</li>
+                        <li>El <b>volumen</b> del día acompaña (un quiebre sin volumen es sospechoso).</li>
+                        <li>El <b>índice general</b> (SPY) y el VIX no están en tu contra hoy.</li>
+                        <li><b>No hay balance</b> (earnings) en los próximos 1–2 días.</li>
+                        <li>Tenés el <b>stop definido</b> y el <b>Riesgo/Beneficio ≥ 2:1</b>.</li>
+                    </ol>
+                </div>
+
+                <div style="font-weight: bold; margin-bottom: 0.6rem; color: var(--text-primary);">🧭 Cómo leer el "Plan de Entrada" de cada tarjeta</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; font-size: 0.83rem; margin-bottom: 1.2rem;">
+                    <div style="background: var(--hover-bg); padding: 0.6rem; border-radius: 4px;">🟢 <b>Zona ideal</b>: el rango de precio donde conviene comprar (cerca del soporte/EMA20).</div>
+                    <div style="background: var(--hover-bg); padding: 0.6rem; border-radius: 4px;">🚫 <b>Máx. a pagar</b>: por encima de acá estás "persiguiendo" y el riesgo/beneficio empeora.</div>
+                    <div style="background: var(--hover-bg); padding: 0.6rem; border-radius: 4px;">🛑 <b>Stop sugerido</b>: dónde salir si te equivocás. Definilo ANTES de entrar.</div>
+                    <div style="background: var(--hover-bg); padding: 0.6rem; border-radius: 4px;">🎯 <b>Objetivo</b>: la próxima resistencia. Ahí evaluás tomar ganancia.</div>
+                    <div style="background: var(--hover-bg); padding: 0.6rem; border-radius: 4px; grid-column: 1/3;">⚖️ <b>Riesgo/Beneficio (R/R)</b>: cuánto ganás por cada peso arriesgado. Buscá 2:1 o más. Menos de 1:1 = mala entrada.</div>
+                </div>
+
+                <div style="font-weight: bold; margin-bottom: 0.6rem; color: var(--text-primary);">📗 Ejemplos prácticos</div>
+
+                <div style="border-left: 3px solid var(--accent-green); padding: 0.6rem 0.9rem; margin-bottom: 0.8rem; background: rgba(46,204,113,0.06);">
+                    <b style="color: var(--accent-green);">Ejemplo 1 — Entrada correcta (pullback):</b>
+                    <p style="font-size: 0.85rem; margin: 0.4rem 0 0; line-height: 1.5;">AAPL marca COMPRA. Venía subiendo y retrocede hasta la EMA20 en $195. El Plan de Entrada dice: zona ideal $194–$197, máx. $199, stop $190, objetivo $208 (R/R 2.6:1). El precio hoy está en $196 y frena con volumen. <b>Entrada válida</b>: estás comprando barato dentro de la zona, con poco riesgo.</p>
+                </div>
+
+                <div style="border-left: 3px solid var(--accent-red); padding: 0.6rem 0.9rem; margin-bottom: 0.8rem; background: rgba(231,76,60,0.06);">
+                    <b style="color: var(--accent-red);">Ejemplo 2 — NO comprar (extendido):</b>
+                    <p style="font-size: 0.85rem; margin: 0.4rem 0 0; line-height: 1.5;">NVDA marca COMPRA FUERTE pero ya saltó +6% hoy y está a $132, muy por encima del "Máx. a pagar" ($124). El estado dice <b>⏳ EXTENDIDO</b>. Si comprás acá, tu stop queda lejísimos y el R/R es 0.7:1. <b>Mejor esperar</b> un retroceso a la zona o pasar a otra acción.</p>
+                </div>
+
+                <div style="border-left: 3px solid var(--accent-blue); padding: 0.6rem 0.9rem; margin-bottom: 1.2rem; background: rgba(59,130,246,0.06);">
+                    <b style="color: var(--accent-blue);">Ejemplo 3 — Esperar confirmación (bajo soporte):</b>
+                    <p style="font-size: 0.85rem; margin: 0.4rem 0 0; line-height: 1.5;">Una acción cae por debajo del soporte. El estado dice <b>🔍 BAJO SOPORTE</b>. Puede ser una oportunidad (deep value) o el inicio de una caída mayor. No adivines: esperá una <b>vela de reversión + volumen</b> que confirme que la caída frenó.</p>
+                </div>
+
+                <div style="background: rgba(234,179,8,0.08); border: 1px solid #eab308; border-radius: 6px; padding: 0.9rem; margin-bottom: 1rem;">
+                    <div style="font-weight: bold; color: #eab308; margin-bottom: 0.4rem;">💡 Reglas de oro</div>
+                    <ul style="margin: 0; padding-left: 1.2rem; font-size: 0.85rem; line-height: 1.6; color: var(--text-primary);">
+                        <li>No persigas: si ya subió mucho, dejala ir. Siempre hay otra oportunidad.</li>
+                        <li>El mejor precio suele estar en el retroceso, no en plena subida vertical.</li>
+                        <li>Nunca entres 1–2 días antes de un balance buscando timing técnico.</li>
+                        <li>Definí el stop ANTES de comprar. Si el stop queda muy lejos, esperá mejor precio.</li>
+                        <li>Podés entrar en 2 partes: mitad en zona ideal, mitad si confirma con volumen.</li>
+                    </ul>
+                </div>
+
+                <p style="font-size: 0.72rem; color: var(--text-secondary); font-style: italic; line-height: 1.4;">⚠️ Esta guía es educativa y de gestión de riesgo, no asesoramiento de inversión personalizado. El rendimiento pasado no garantiza resultados futuros. Operá solo con capital que puedas permitirte perder.</p>
             </div>
         </div>
 
