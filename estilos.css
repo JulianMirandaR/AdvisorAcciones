@@ -1,20 +1,22 @@
 :root {
-    /* Premium Midnight Fintech Palette */
-    --bg-color: #040914; /* Ultra deep midnight blue */
-    --card-bg: #0b1320; /* Dark slate blue */
-    --text-primary: #f8fafc; /* Crisp white-blue */
-    --text-secondary: #8b9eb3; /* Cool slate gray */
+    /* Paleta "Grafito neutro": fondo gris-negro cálido y neutro (sin azul) con acento ámbar.
+       NOTA: las variables --accent-blue/--accent-indigo conservan el nombre por retrocompat
+       (se usan en muchos lugares del CSS y del HTML), pero ahora contienen tonos ámbar/bronce. */
+    --bg-color: #131316; /* Grafito cálido */
+    --card-bg: #1c1c20; /* Grafito un tono más claro */
+    --text-primary: #f2f2f0; /* Blanco cálido */
+    --text-secondary: #a8a29e; /* Gris cálido (stone) */
 
-    /* Vibrant Accents */
-    --accent-blue: #0ea5e9; /* Sky blue */
-    --accent-indigo: #6366f1; /* Neon indigo */
-    --accent-green: #10b981; /* Emerald */
-    --accent-red: #ef4444; /* Coral red */
-    --accent-gold: #f59e0b; /* Amber */
+    /* Acentos */
+    --accent-blue: #d99a2b; /* Ámbar (acento principal — nombre legado) */
+    --accent-indigo: #b57619; /* Bronce (para degradés — nombre legado) */
+    --accent-green: #10b981; /* Verde (suba) */
+    --accent-red: #ef4444; /* Rojo (baja) */
+    --accent-gold: #e0b341; /* Dorado */
 
-    --border-color: rgba(148, 163, 184, 0.12); /* Subtle glass border */
-    --hover-bg: rgba(14, 165, 233, 0.08); /* Blue-tinted hover */
-    --glow-shadow: 0 0 25px rgba(99, 102, 241, 0.15); /* Indigo glow */
+    --border-color: rgba(168, 162, 158, 0.14); /* Borde cálido sutil */
+    --hover-bg: rgba(217, 154, 43, 0.10); /* Hover con tinte ámbar */
+    --glow-shadow: 0 0 25px rgba(217, 154, 43, 0.12); /* Glow ámbar */
 }
 
 * {
@@ -74,7 +76,7 @@ header h1 {
     -webkit-background-clip: text;
     background-clip: text;
     margin-bottom: 0.5rem;
-    filter: drop-shadow(0 4px 6px rgba(14, 165, 233, 0.2));
+    filter: drop-shadow(0 4px 6px rgba(217, 154, 43, 0.2));
 }
 
 .market-status {
@@ -137,7 +139,7 @@ header h1 {
     background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     border-color: transparent;
     color: white;
-    box-shadow: 0 6px 15px rgba(99, 102, 241, 0.3);
+    box-shadow: 0 6px 15px rgba(217, 154, 43, 0.3);
     transform: translateY(-2px);
 }
 
@@ -164,7 +166,7 @@ header h1 {
     transform: translateY(-5px);
     box-shadow: var(--glow-shadow), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
     border-color: var(--accent-blue);
-    background-color: #172033;
+    background-color: #26262b;
 }
 
 @keyframes fadeIn {
@@ -286,7 +288,7 @@ header h1 {
 
 .pattern-tag {
     display: inline-block;
-    background-color: rgba(59, 130, 246, 0.1);
+    background-color: rgba(217, 154, 43, 0.1);
     color: var(--accent-blue);
     padding: 0.25rem 0.5rem;
     border-radius: 6px;
@@ -359,7 +361,7 @@ header h1 {
 
 .search-box input:focus {
     border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+    box-shadow: 0 0 0 3px rgba(217, 154, 43, 0.2);
 }
 
 .search-clear-btn {
@@ -677,8 +679,8 @@ header h1 {
 /* Hover effects */
 .stock-card:hover {
     transform: translateY(-5px) scale(1.02);
-    box-shadow: 0 0 20px rgba(14, 165, 233, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
-    border-color: rgba(14, 165, 233, 0.5);
+    box-shadow: 0 0 20px rgba(217, 154, 43, 0.2), 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+    border-color: rgba(217, 154, 43, 0.5);
     background: rgba(23, 32, 51, 0.85);
 }
 
@@ -923,7 +925,7 @@ header h1 {
 
 /* --- Botones de Acción Especiales (Ej. Ingresar) --- */
 .action-btn {
-    background: linear-gradient(135deg, var(--accent-blue), #6366f1);
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
     color: white;
     border: none;
     padding: 0.8rem 2rem;
@@ -932,14 +934,14 @@ header h1 {
     border-radius: 8px;
     cursor: pointer;
     transition: all 0.3s ease;
-    box-shadow: 0 4px 15px rgba(14, 165, 233, 0.3);
+    box-shadow: 0 4px 15px rgba(217, 154, 43, 0.3);
     font-family: inherit;
     display: inline-block;
 }
 
 .action-btn:hover {
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(14, 165, 233, 0.5);
+    box-shadow: 0 6px 20px rgba(217, 154, 43, 0.5);
     background: linear-gradient(135deg, #0284c7, #4f46e5);
 }
 

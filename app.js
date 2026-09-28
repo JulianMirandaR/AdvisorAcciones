@@ -2500,8 +2500,8 @@ function renderCclIndicator() {
             datasets: [{
                 label: 'CCL',
                 data: historyPrices,
-                borderColor: '#0ea5e9',
-                backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                borderColor: '#d99a2b',
+                backgroundColor: 'rgba(217, 154, 43, 0.12)',
                 borderWidth: 2,
                 pointRadius: 2,
                 fill: true,
@@ -3084,8 +3084,8 @@ window.executeBacktestUI = () => {
                     {
                         label: 'Curva de Capital (Equity)',
                         data: dataEq,
-                        borderColor: '#0ea5e9',
-                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderColor: '#d99a2b',
+                        backgroundColor: 'rgba(217, 154, 43, 0.12)',
                         borderWidth: 2,
                         yAxisID: 'y',
                         fill: true,
@@ -3126,7 +3126,7 @@ window.executeBacktestUI = () => {
                     x: { ticks: { color: '#9ca3af' }, grid: { color: '#1f2937' } },
                     y: { 
                         type: 'linear', display: true, position: 'left',
-                        ticks: { color: '#0ea5e9' }, grid: { color: '#1f2937' }
+                        ticks: { color: '#d99a2b' }, grid: { color: '#2a2a2f' }
                     },
                     y1: { 
                         type: 'linear', display: true, position: 'right',
