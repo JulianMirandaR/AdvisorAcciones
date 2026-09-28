@@ -2910,6 +2910,7 @@ window.executeBacktestUI = () => {
             slippagePct: getNum('btSlippage', 0.2),
             riskPerTradePct: getNum('btRisk', 1) / 100,
             sizingMode: getVal('btSizing', 'risk'),
+            useEntryZoneFilter: (document.getElementById('btZoneFilter') ? document.getElementById('btZoneFilter').checked : false),
             term: document.getElementById('btTerm').value
         };
         
@@ -2959,6 +2960,30 @@ window.executeBacktestUI = () => {
             return;
         }
 
+        // --- A/B: mismas condiciones, con y sin filtro de Zona de Entrada ---
+        // Corre barato (sin ML) y responde directo: ¿la regla del Plan de Entrada agrega valor?
+        const rNoFilter = window.runBacktest(stockHistory, { ...config, useEntryZoneFilter: false });
+        const rZone = window.runBacktest(stockHistory, { ...config, useEntryZoneFilter: true });
+        let abHtml = '';
+        if (rNoFilter && !rNoFilter.error && rZone && !rZone.error) {
+            const rn = rNoFilter.totalReturn, rz = rZone.totalReturn;
+            const helps = rz > rn;
+            const abColor = helps ? 'var(--accent-green)' : 'var(--accent-red)';
+            const fmtPct = v => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
+            abHtml = `
+            <div style="width:100%; background: rgba(255,255,255,0.03); border:1px solid ${abColor}; border-radius:8px; padding:0.8rem 1rem; margin-bottom:0.8rem;">
+                <div style="font-weight:bold; color:${abColor}; margin-bottom:0.4rem;">
+                    ${helps ? '✅ El filtro de Zona de Entrada MEJORA el resultado' : '❌ El filtro de Zona de Entrada NO mejora el resultado'}
+                    <span style="color:var(--text-secondary); font-weight:normal;">(en ${symbol}, esta ventana)</span>
+                </div>
+                <div style="display:flex; gap:1.2rem; flex-wrap:wrap; font-size:0.85rem;">
+                    <span>Con filtro: <b style="color:${rz>=0?'var(--accent-green)':'var(--accent-red)'}">${fmtPct(rz)}</b> · ${rZone.trades.length} trades · DD ${(rZone.maxDrawdown*100).toFixed(1)}%</span>
+                    <span>Sin filtro: <b style="color:${rn>=0?'var(--accent-green)':'var(--accent-red)'}">${fmtPct(rn)}</b> · ${rNoFilter.trades.length} trades · DD ${(rNoFilter.maxDrawdown*100).toFixed(1)}%</span>
+                    <span style="color:var(--text-secondary);">Entradas evitadas por el filtro: ${rZone.entriesSkippedByZone}</span>
+                </div>
+            </div>`;
+        }
+
         const colorClasses = results.totalReturn >= 0 ? "var(--accent-green)" : "var(--accent-red)";
 
         // --- VEREDICTO: ¿la estrategia agrega valor sobre comprar y mantener? ---
@@ -2986,7 +3011,7 @@ window.executeBacktestUI = () => {
             </div>`;
         }
 
-        document.getElementById('btResults').innerHTML = verdictHtml + `
+        document.getElementById('btResults').innerHTML = abHtml + verdictHtml + `
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;">
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">CAPITAL FINAL</span><br><b style="font-size:1.2rem; color:${colorClasses};">$${results.finalCapital.toFixed(2)}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">RETORNO</span><br><b style="font-size:1.2rem; color:${colorClasses};">${(results.totalReturn*100).toFixed(2)}%</b></div>

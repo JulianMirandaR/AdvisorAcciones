@@ -45,6 +45,11 @@ export function runBacktest(stockHistoryChronological, config = {}) {
         riskPerTradePct = 0.01,   // arriesga 1% del capital por operación
         stopAtrMult = 2,          // distancia del stop = 2 x ATR aproximado
         maxPositionPct = 0.95,    // exposición máxima por trade (sin apalancamiento)
+        // --- Filtro por Zona de Entrada (nuevo) ---
+        // Si está activo, además de la señal de compra exige que el precio esté en una zona sana
+        // (EN_ZONA o ACEPTABLE del Plan de Entrada); descarta entradas EXTENDIDO/DEBAJO (perseguir
+        // o cuchillo cayendo). Sirve para medir si la regla del Plan de Entrada agrega valor.
+        useEntryZoneFilter = false,
         term = 'short',
         marketCondition = 'SIDEWAYS'
     } = config;
@@ -76,6 +81,7 @@ export function runBacktest(stockHistoryChronological, config = {}) {
     let daysInMarket = 0; // para medir exposición (% del tiempo con posición abierta)
     let totalCommissions = 0; // costo acumulado de comisiones (entrada + salida)
     let totalSlippage = 0;    // costo acumulado por deslizamiento de precio
+    let entriesSkippedByZone = 0; // señales de compra descartadas por el filtro de zona de entrada
 
     testData.forEach((dayData, index) => {
         const currentPrice = parseFloat(dayData.price);
@@ -100,7 +106,19 @@ export function runBacktest(stockHistoryChronological, config = {}) {
 
         if (!position) {
             // Evaluando Entrada
-            if (signal.includes("COMPRA") || signal.includes("PRE-COMPRA")) {
+            let allowEntry = signal.includes("COMPRA") || signal.includes("PRE-COMPRA");
+
+            // Filtro por Zona de Entrada: exige que el precio esté en zona sana, no extendido.
+            if (allowEntry && useEntryZoneFilter) {
+                const ez = analysis.entryZone;
+                const okZone = !!(ez && (ez.status === 'EN_ZONA' || ez.status === 'ACEPTABLE'));
+                if (!okZone) {
+                    allowEntry = false;
+                    entriesSkippedByZone++;
+                }
+            }
+
+            if (allowEntry) {
                 // --- DIMENSIONAMIENTO DE LA POSICIÓN ---
                 let stopDist = null;
                 let investAmount;
@@ -294,7 +312,10 @@ export function runBacktest(stockHistoryChronological, config = {}) {
         totalCommissions: totalCommissions,
         totalSlippage: totalSlippage,
         totalCosts: totalCosts,
-        costDragPct: capital > 0 ? totalCosts / capital : 0
+        costDragPct: capital > 0 ? totalCosts / capital : 0,
+        // --- Filtro por zona de entrada (nuevo) ---
+        useEntryZoneFilter: useEntryZoneFilter,
+        entriesSkippedByZone: entriesSkippedByZone
     };
 
     return result;

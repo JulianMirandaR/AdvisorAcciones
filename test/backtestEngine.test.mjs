@@ -77,3 +77,19 @@ test('los retornos son netos de costos (más costo => menor capital final)', () 
     const pricey = runBacktest(buildSeries(), { ...bullCfg, sizingMode: 'allin', commissionPct: 1.0, slippagePct: 0.5 });
     assert.ok(pricey.finalCapital < cheap.finalCapital, 'con más costos el capital final debe ser menor');
 });
+
+test('filtro por zona de entrada: expone los campos y solo cuenta descartes cuando está activo', () => {
+    const off = runBacktest(buildSeries(), { ...bullCfg, useEntryZoneFilter: false });
+    const on = runBacktest(buildSeries(), { ...bullCfg, useEntryZoneFilter: true });
+    assert.equal(off.useEntryZoneFilter, false);
+    assert.equal(on.useEntryZoneFilter, true);
+    assert.equal(off.entriesSkippedByZone, 0, 'sin filtro no se descarta ninguna entrada');
+    assert.ok(on.entriesSkippedByZone >= 0);
+});
+
+test('filtro por zona de entrada: descarta entradas cuando el precio está extendido', () => {
+    // En la serie sintética la EMA20 queda 3% debajo del precio, así que el precio siempre está
+    // EXTENDIDO respecto a la zona: con el filtro activo se descartan las entradas de compra.
+    const on = runBacktest(buildSeries(), { ...bullCfg, useEntryZoneFilter: true });
+    assert.ok(on.entriesSkippedByZone > 0, 'debería descartar al menos una entrada extendida');
+});
