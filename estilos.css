@@ -581,6 +581,40 @@ body {
     /* Space for scrollbar */
 }
 
+/* --- Panel macro colapsable (desplegable en celular) --- */
+.sidebar-content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* En desktop el panel está siempre visible: el botón se ve como un simple título, sin colapsar. */
+.sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0;
+    margin-bottom: 0.5rem;
+    cursor: default;
+}
+
+.sidebar-toggle-icon {
+    display: none;
+    transition: transform 0.2s ease;
+}
+
+/* En desktop, ignoramos el estado "collapsed": el contenido siempre se muestra. */
+.dashboard-sidebar.collapsed .sidebar-content {
+    display: flex;
+}
+
 .macro-card {
     background-color: var(--card-bg);
     border-radius: 12px;
@@ -814,6 +848,36 @@ body {
         padding-right: 0;
         order: 2; /* Move sidebar below stock list */
         margin-top: 1rem;
+        gap: 0;
+    }
+
+    /* En celular el panel macro es desplegable: el botón es una barra clickeable. */
+    .sidebar-toggle {
+        cursor: pointer;
+        justify-content: space-between;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        color: var(--text-primary);
+        margin-bottom: 0;
+    }
+
+    .sidebar-toggle-icon {
+        display: inline-block;
+    }
+
+    /* Colapsado: se oculta el contenido. Expandido: se muestra con un margen arriba. */
+    .dashboard-sidebar.collapsed .sidebar-content {
+        display: none;
+    }
+
+    .dashboard-sidebar .sidebar-content {
+        margin-top: 1rem;
+    }
+
+    .dashboard-sidebar:not(.collapsed) .sidebar-toggle .sidebar-toggle-icon {
+        transform: rotate(180deg);
     }
 
     .tabs {

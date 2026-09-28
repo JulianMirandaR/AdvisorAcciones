@@ -7,7 +7,7 @@
     <title>Faro Bursátil — Análisis y timing del mercado</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23131316'/%3E%3Ctext x='16' y='23' font-family='Arial,sans-serif' font-size='20' font-weight='bold' fill='%23d99a2b' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
-    <link rel="stylesheet" href="estilos.css?v=2.4">
+    <link rel="stylesheet" href="estilos.css?v=2.5">
     <!-- Chart.js for charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Lightweight Charts for Advanced Charts (pinned to v4 for compatibility) -->
@@ -125,9 +125,12 @@
 
             </div>
 
-            <div class="dashboard-sidebar">
-                <h4 style="text-align:center; color: var(--text-secondary); margin-bottom: 0.5rem;">Datos Macro</h4>
-
+            <div class="dashboard-sidebar collapsed">
+                <button type="button" class="sidebar-toggle" onclick="window.toggleMacroPanel()" aria-expanded="false" aria-controls="sidebarContent">
+                    <span>📊 Datos Macro</span>
+                    <span class="sidebar-toggle-icon" aria-hidden="true">▾</span>
+                </button>
+                <div class="sidebar-content" id="sidebarContent">
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
                     <div class="macro-card" id="buffettContainer" style="margin-bottom: 0;" title="Mide la Capitalización Total del Mercado de EE.UU. en relación con su PIB.">
                         <!-- Injected by app.js -->
@@ -175,6 +178,7 @@
                     <div class="macro-desc" id="us10yRecommendation"
                         style="font-weight: 600; font-size: 0.85rem; margin-bottom: 0.5rem;"></div>
                 </div>
+                </div><!-- /.sidebar-content -->
             </div>
         </div>
 
@@ -455,7 +459,7 @@
 
     </div>
     <script type="module" src="realData.js?v=2.4"></script>
-    <script type="module" src="app.js?v=2.9"></script>
+    <script type="module" src="app.js?v=2.10"></script>
 </body>
 
 </html>

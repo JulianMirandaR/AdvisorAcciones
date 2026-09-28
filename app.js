@@ -3187,6 +3187,20 @@ window.manualBuyIol = async (symbol, price) => {
     }
 };
 
+// Despliega/colapsa el panel de "Datos Macro" (solo tiene efecto visible en celular; en desktop
+// el CSS lo mantiene siempre visible). Al expandir, avisamos un resize para que el gráfico del
+// CCL (Chart.js) se ajuste bien si estaba oculto.
+window.toggleMacroPanel = () => {
+    const sidebar = document.querySelector('.dashboard-sidebar');
+    if (!sidebar) return;
+    const nowCollapsed = sidebar.classList.toggle('collapsed');
+    const btn = sidebar.querySelector('.sidebar-toggle');
+    if (btn) btn.setAttribute('aria-expanded', String(!nowCollapsed));
+    if (!nowCollapsed) {
+        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
+    }
+};
+
 window.disconnectIol = async () => {
     window.iolUsername = "";
     window.iolPassword = "";
