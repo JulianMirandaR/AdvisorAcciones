@@ -38,59 +38,115 @@ body {
     padding: 1rem 1rem;
 }
 
-header {
-    text-align: center;
-    margin-bottom: 2rem;
+/* --- HEADER (barra profesional: marca a la izquierda, controles a la derecha) --- */
+.app-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding: 0.9rem 0 1.1rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
+.brand-mark {
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--accent-gold), var(--accent-indigo));
+    box-shadow: 0 4px 14px rgba(217, 154, 43, 0.25);
+    flex-shrink: 0;
+}
+
+.brand-text h1 {
+    font-size: 1.65rem;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.1;
+}
+
+.brand-text p {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin: 0.15rem 0 0;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
 }
 
 .header-controls {
-    position: absolute;
-    top: 1rem;
-    right: 80px;
     display: flex;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+#iolStatusBadge {
+    display: flex;
+    align-items: center;
+    padding: 0.45rem 0.75rem;
+    background: var(--card-bg);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+#iolStatusBadge:hover {
+    border-color: var(--accent-blue);
 }
 
 .auth-btn {
     background: var(--card-bg);
     color: var(--accent-blue);
     border: 1px solid var(--accent-blue);
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
+    padding: 0.45rem 0.9rem;
+    border-radius: 8px;
     cursor: pointer;
-    font-weight: bold;
+    font-weight: 600;
     font-size: 0.85rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    transition: background 0.2s ease;
 }
 
-header h1 {
-    font-size: 2.8rem;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-    background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
-    position: relative;
-    display: inline-block;
-    color: transparent;
-    -webkit-background-clip: text;
-    background-clip: text;
-    margin-bottom: 0.5rem;
-    filter: drop-shadow(0 4px 6px rgba(217, 154, 43, 0.2));
+.auth-btn:hover {
+    background: var(--hover-bg);
 }
 
 .market-status {
     background-color: var(--card-bg);
-    padding: 1rem;
-    border-radius: 12px;
-    text-align: center;
-    margin-bottom: 2rem;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
+    text-align: left;
+    margin-bottom: 1.5rem;
     border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center;
-    gap: 1rem;
-    font-weight: 600;
+    gap: 0.75rem;
+    font-weight: 500;
+    font-size: 0.9rem;
 }
 
 .status-indicator {
@@ -725,17 +781,17 @@ header h1 {
         padding: 0.5rem;
     }
 
-    header {
-        padding-top: 2.5rem; /* Space for absolute header items */
+    .app-header {
+        gap: 0.75rem;
     }
 
-    .header-controls {
-        top: 0.5rem;
-        right: 4rem; /* Place to the left of the bell icon */
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
     }
 
-    header h1 {
-        font-size: 1.8rem;
+    .brand-text h1 {
+        font-size: 1.4rem;
     }
 
     .dashboard-top-section {
@@ -823,17 +879,10 @@ header h1 {
 
 /* --- Notificaciones --- */
 .notifications-wrapper {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
+    position: relative;
     cursor: pointer;
-}
-
-@media screen and (max-width: 860px) {
-    .notifications-wrapper {
-        top: 0.5rem;
-        right: 0.5rem;
-    }
+    display: flex;
+    align-items: center;
 }
 
 .bell-icon {
