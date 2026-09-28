@@ -7,6 +7,7 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/fi
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
 import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
 import { runWalkForwardBacktest } from './walkForwardEngine.js';
+import { runBacktest } from './backtestEngine.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
@@ -2093,244 +2094,9 @@ window.savePriceAlert = function() {
 
 // --- BONUS: Backtesting Engine Integrado ---
 // Función disponible globalmente para usarse desde la consola de desarrollador
-/**
- * Ejecuta una simulación de operaciones a lo largo del historial de datos.
- * @param {Array} stockHistory - Array de días (Ej: resultado de un mapeo previo que contenga { price, rsi, macd, ema20... })
- * @param {String} term - "short" (por defecto) o "long"
- */
-window.runBacktest = function(stockHistoryChronological, config = {}) {
-    if (!Array.isArray(stockHistoryChronological) || stockHistoryChronological.length === 0) {
-        console.error("Backtest falló: stockHistory vacio o invalido.");
-        return null; 
-    }
-
-    if (typeof config === 'string') {
-        config = { term: config };
-    }
-
-    const {
-        capital = 10000,
-        positionSizePct = 1.0,
-        stopLossPct = -0.05,
-        takeProfitPct = 0.15,
-        trailingStopPct = 0.03, // Ignored mostly as we use ATR dynamically now
-        slippagePct = 0.2,
-        commissionPct = 0.1,
-        term = 'short',
-        marketCondition = 'SIDEWAYS'
-    } = config;
-
-    // 1. TIME-BASED SPLIT (Anti Data Leakage)
-    // Reserve 20% for pure Out-Of-Sample validation testing
-    const splitIndex = Math.floor(stockHistoryChronological.length * 0.80);
-    const testData = stockHistoryChronological.slice(splitIndex);
-
-    if (testData.length < 10) {
-        return { error: "Poco data out-of-sample para test" };
-    }
-    console.log(`[Backtest] Evaluando ${testData.length} dias OUT-OF-SAMPLE (Blind Test)`);
-
-    let currentCapital = capital;
-    let position = null;
-
-    let trades = [];
-    let grossProfit = 0;
-    let grossLoss = 0;
-    let peakCapital = capital;
-    let maxDrawdown = 0;
-    let equityCurve = [];
-    let daysInMarket = 0; // para medir exposición (% del tiempo con posición abierta)
-
-    testData.forEach((dayData, index) => {
-        const currentPrice = parseFloat(dayData.price);
-        if (isNaN(currentPrice)) return;
-
-        let portfolioInfo = null;
-        if (position) {
-            if (currentPrice > position.highestPrice) {
-                position.highestPrice = currentPrice;
-            }
-            portfolioInfo = {
-                entryPrice: position.entryPrice,
-                highestPrice: position.highestPrice
-            };
-        }
-
-        const analysis = analyzeStockWithMarketCondition(dayData, term, marketCondition, portfolioInfo);
-        
-        let signal = analysis.señal_final || analysis.signal;
-        if (term === 'short') signal = analysis.corto_plazo.signal;
-        else if (term === 'long') signal = analysis.largo_plazo.signal;
-
-        if (!position) {
-            // Evaluando Entrada
-            if (signal.includes("COMPRA") || signal.includes("PRE-COMPRA")) {
-                const investAmount = currentCapital * positionSizePct;
-                const priceWithSlippage = currentPrice * (1 + (slippagePct / 100));
-                const commission = investAmount * (commissionPct / 100);
-                
-                const finalInvestAmount = investAmount - commission;
-                const qty = finalInvestAmount / priceWithSlippage;
-
-                position = {
-                    entryDate: dayData.date,
-                    entryPrice: priceWithSlippage,
-                    qty: qty,
-                    highestPrice: priceWithSlippage,
-                    investedAmount: investAmount
-                };
-                currentCapital -= investAmount;
-            }
-        } else {
-            // Evaluando Salida
-            let exitReason = null;
-            const floatProfitPct = (currentPrice - position.entryPrice) / position.entryPrice;
-            
-            // Hard Stops (Safety net)
-            if (floatProfitPct <= stopLossPct) {
-                exitReason = "STOP_LOSS";
-            } else if (floatProfitPct >= takeProfitPct) {
-                exitReason = "TAKE_PROFIT";
-            } else if (analysis.actionFlag) { // Flag dinamico ATR del motor de analisis
-                exitReason = analysis.actionFlag;
-            } else if (signal.includes("VENTA")) {
-                exitReason = "SIGNAL_SELL";
-            } else if (trailingStopPct && floatProfitPct > 0) {
-                const drawdownFromPeak = (position.highestPrice - currentPrice) / position.highestPrice;
-                if (drawdownFromPeak >= trailingStopPct) {
-                    exitReason = "TRAILING_STOP";
-                }
-            }
-
-            if (exitReason) {
-                const priceWithSlippage = currentPrice * (1 - (slippagePct / 100));
-                const grossVal = position.qty * priceWithSlippage;
-                const commission = grossVal * (commissionPct / 100);
-                const netVal = grossVal - commission;
-
-                currentCapital += netVal;
-
-                const tradeProfit = netVal - position.investedAmount;
-                if (tradeProfit > 0) grossProfit += tradeProfit;
-                else grossLoss += Math.abs(tradeProfit);
-
-                trades.push({
-                    entryDate: position.entryDate,
-                    exitDate: dayData.date,
-                    profit: tradeProfit,
-                    profitPct: tradeProfit / position.investedAmount,
-                    reason: exitReason
-                });
-
-                position = null;
-            }
-        }
-
-        if (position) daysInMarket++;
-
-        const currentEquity = currentCapital + (position ? (currentPrice * position.qty) : 0);
-        equityCurve.push({ date: dayData.date, value: currentEquity });
-
-        if (currentEquity > peakCapital) {
-            peakCapital = currentEquity;
-        } else {
-            const drawdown = (peakCapital - currentEquity) / peakCapital;
-            if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-        }
-    });
-
-    // Close open position at end
-    if (position) {
-        const lastDay = testData[testData.length - 1];
-        const lastPrice = parseFloat(lastDay.price);
-        const priceWithSlippage = lastPrice * (1 - (slippagePct / 100));
-        const grossVal = position.qty * priceWithSlippage;
-        const commission = grossVal * (commissionPct / 100);
-        const netVal = grossVal - commission;
-
-        currentCapital += netVal;
-        const tradeProfit = netVal - position.investedAmount;
-        if (tradeProfit > 0) grossProfit += tradeProfit;
-        else grossLoss += Math.abs(tradeProfit);
-        
-        trades.push({
-            entryDate: position.entryDate,
-            exitDate: lastDay.date,
-            profit: tradeProfit,
-            profitPct: tradeProfit / position.investedAmount,
-            reason: "END_OF_TEST"
-        });
-    }
-
-    const winningTrades = trades.filter(t => t.profit > 0).length;
-    const winRate = trades.length > 0 ? (winningTrades / trades.length) : 0;
-    const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
-    const totalReturn = (currentCapital - capital) / capital;
-    const exposurePct = testData.length > 0 ? (daysInMarket / testData.length) : 0;
-
-    // --- BENCHMARK: COMPRAR Y MANTENER (mismo activo, misma ventana, mismos costos) ---
-    // Responde la pregunta clave: ¿la estrategia de timing supera a simplemente sostener la acción?
-    const firstPrice = parseFloat(testData[0].price);
-    const lastPrice = parseFloat(testData[testData.length - 1].price);
-    let buyHold = null;
-    if (!isNaN(firstPrice) && firstPrice > 0 && !isNaN(lastPrice)) {
-        const bhEntry = firstPrice * (1 + slippagePct / 100);
-        const bhQty = (capital * (1 - commissionPct / 100)) / bhEntry;
-        // Curva de capital y drawdown de buy & hold (marcado a mercado)
-        let bhPeak = capital, bhMaxDD = 0;
-        const bhEquityCurve = testData.map(d => {
-            const p = parseFloat(d.price);
-            const val = isNaN(p) ? capital : bhQty * p;
-            if (val > bhPeak) bhPeak = val;
-            else { const dd = (bhPeak - val) / bhPeak; if (dd > bhMaxDD) bhMaxDD = dd; }
-            return { date: d.date, value: val };
-        });
-        const bhExit = lastPrice * (1 - slippagePct / 100);
-        const bhFinal = bhQty * bhExit * (1 - commissionPct / 100);
-        buyHold = {
-            totalReturn: (bhFinal - capital) / capital,
-            finalCapital: bhFinal,
-            maxDrawdown: bhMaxDD,
-            equityCurve: bhEquityCurve
-        };
-    }
-
-    // --- BENCHMARK EXTERNO OPCIONAL (ej. SPY / S&P500), alineado a la ventana de test ---
-    let benchmark = null;
-    if (config.benchmark && Array.isArray(config.benchmark.prices) && config.benchmark.prices.length > 1) {
-        const startDate = testData[0].date, endDate = testData[testData.length - 1].date;
-        const bp = config.benchmark.prices.filter(p => p.date >= startDate && p.date <= endDate && p.price != null);
-        if (bp.length > 1) {
-            const bStart = parseFloat(bp[0].price), bEnd = parseFloat(bp[bp.length - 1].price);
-            if (bStart > 0) {
-                benchmark = { label: config.benchmark.label || 'Benchmark', totalReturn: (bEnd - bStart) / bStart };
-            }
-        }
-    }
-
-    // Alpha = exceso de la estrategia sobre comprar y mantener el mismo activo
-    const alpha = buyHold ? (totalReturn - buyHold.totalReturn) : null;
-    // Alpha vs mercado (si hay benchmark externo)
-    const alphaVsBenchmark = benchmark ? (totalReturn - benchmark.totalReturn) : null;
-
-    const result = {
-        initialCapital: capital,
-        finalCapital: currentCapital,
-        totalReturn: totalReturn,
-        winRate: winRate,
-        maxDrawdown: maxDrawdown,
-        profitFactor: profitFactor === Infinity ? "Infinity" : profitFactor.toFixed(2),
-        exposurePct: exposurePct,
-        trades: trades,
-        equityCurve: equityCurve,
-        buyHold: buyHold,
-        benchmark: benchmark,
-        alpha: alpha,
-        alphaVsBenchmark: alphaVsBenchmark
-    };
-
-    return result;
-};
+// runBacktest y atrProxyFromCloses viven ahora en backtestEngine.js (extraídos para poder
+// testearlos aislados en Node). Lo exponemos en window para que la UI del modal lo siga usando.
+window.runBacktest = runBacktest;
 
 
 function renderHeatmap() {
@@ -3126,11 +2892,18 @@ window.executeBacktestUI = () => {
     // Slight timeout for UI refresh
     setTimeout(() => {
         const symbol = window.currentBtSymbol;
+        const getNum = (id, fallback) => { const el = document.getElementById(id); return el ? (parseFloat(el.value) || fallback) : fallback; };
+        const getVal = (id, fallback) => { const el = document.getElementById(id); return el ? el.value : fallback; };
         const config = {
             capital: parseFloat(document.getElementById('btCapital').value) || 10000,
-            stopLossPct: parseFloat(document.getElementById('btSl').value) / 100 || 0.05,
+            stopLossPct: parseFloat(document.getElementById('btSl').value) / 100 || 0.08,
             takeProfitPct: parseFloat(document.getElementById('btTp').value) / 100 || 0.15,
             trailingStopPct: parseFloat(document.getElementById('btTs').value) / 100 || 0.03,
+            // Costos y sizing (nuevos): comisión y slippage van en % (el motor divide por 100).
+            commissionPct: getNum('btCommission', 0.1),
+            slippagePct: getNum('btSlippage', 0.2),
+            riskPerTradePct: getNum('btRisk', 1) / 100,
+            sizingMode: getVal('btSizing', 'risk'),
             term: document.getElementById('btTerm').value
         };
         
@@ -3215,6 +2988,10 @@ window.executeBacktestUI = () => {
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">MAX DRAWDOWN</span><br><b style="font-size:1.2rem; color:var(--accent-red);">${(results.maxDrawdown*100).toFixed(1)}%</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">PROFIT FACTOR</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.profitFactor}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">TRADES</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.trades.length}</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;" title="Comisiones + slippage pagados en la ventana"><span style="color:var(--text-secondary); font-size:0.75rem;">COSTOS</span><br><b style="font-size:1.2rem; color:var(--accent-red);">-$${(results.totalCosts || 0).toFixed(2)}</b><br><span style="font-size:0.65rem; color:var(--text-secondary);">${((results.costDragPct || 0)*100).toFixed(2)}% del capital</span></div>
+            </div>
+            <div style="width:100%; margin-top:0.5rem; font-size:0.7rem; color:var(--text-secondary); text-align:center;">
+                Sizing: <b>${results.sizingMode === 'risk' ? 'Por riesgo (% del capital por trade)' : 'All-in (100%)'}</b> · Retornos netos de comisiones y slippage.
             </div>
         `;
 

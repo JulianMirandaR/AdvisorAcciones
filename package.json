@@ -2,6 +2,10 @@
   "name": "advisor-acciones",
   "version": "1.0.0",
   "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js"
+  },
   "dependencies": {
     "firebase": "^10.8.1",
     "openai": "^6.37.0"

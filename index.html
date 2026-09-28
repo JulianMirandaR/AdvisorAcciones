@@ -188,6 +188,25 @@
                         <input type="number" id="btTs" value="3" style="padding:0.3rem; border-radius:4px; width:80px;">
                     </div>
                     <div>
+                        <label for="btCommission" style="font-size:0.8rem; color:var(--text-secondary);" title="Comisión por lado (compra y venta). Ej. IOL ~0.5%">Comisión (%)</label><br>
+                        <input type="number" id="btCommission" value="0.5" step="0.05" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label for="btSlippage" style="font-size:0.8rem; color:var(--text-secondary);" title="Deslizamiento de precio por lado: cuánto peor entra/sale la orden vs el precio de cierre">Slippage (%)</label><br>
+                        <input type="number" id="btSlippage" value="0.2" step="0.05" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label for="btRisk" style="font-size:0.8rem; color:var(--text-secondary);" title="Cuánto del capital arriesgás por operación (con sizing por riesgo)">Riesgo/trade (%)</label><br>
+                        <input type="number" id="btRisk" value="1" step="0.25" style="padding:0.3rem; border-radius:4px; width:80px;">
+                    </div>
+                    <div>
+                        <label for="btSizing" style="font-size:0.8rem; color:var(--text-secondary);">Dimensionamiento</label><br>
+                        <select id="btSizing" style="padding:0.3rem; border-radius:4px;">
+                            <option value="risk">Por riesgo (realista)</option>
+                            <option value="allin">All-in (100%)</option>
+                        </select>
+                    </div>
+                    <div>
                         <label for="btTerm" style="font-size:0.8rem; color:var(--text-secondary);">Estrategia</label><br>
                         <select id="btTerm" style="padding:0.3rem; border-radius:4px;">
                             <option value="all">Híbrida (Máster)</option>
