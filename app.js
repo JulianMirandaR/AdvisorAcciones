@@ -44,6 +44,7 @@ let globalStocksData = []; // To keep track for re-sorting
 window.globalStocksData = globalStocksData; // Exponer globalmente para otros módulos (uiFeatures.js)
 let globalMacroData = null; // Macroeconomic data (Buffett Indicator)
 let globalCclHistory = null; // Historical CCL Data
+let globalHealthData = null; // Estado de la última sincronización (meta/health)
 let activeFilter = 'all'; // all, buy, hold, sell, favorites
 let activeSort = 'general'; // general, short, long
 let searchTerm = '';
@@ -691,11 +692,35 @@ function renderMarketStatus() {
         usageInfo = `<br><span style="font-size: 0.8rem; color: var(--accent-green);">Datos de cierre diario sincronizados desde la nube${dateLabel}. No es cotización intradía en vivo.</span>`;
     }
 
+    // Estado de salud de la última sincronización del backend (meta/health).
+    let healthInfo = '';
+    if (globalHealthData && globalHealthData.status) {
+        const h = globalHealthData;
+        const statusColors = {
+            'OK':      { c: 'var(--accent-green)', t: '✅ Sincronización OK' },
+            'PARTIAL': { c: '#eab308',             t: '⚠️ Sincronización parcial' },
+            'ERROR':   { c: 'var(--accent-red)',   t: '❌ Fallo de sincronización' },
+            'FATAL':   { c: 'var(--accent-red)',   t: '❌ Fallo fatal de sincronización' }
+        };
+        const sc = statusColors[h.status] || statusColors['PARTIAL'];
+        let lastRunTxt = '';
+        if (h.lastRun) {
+            const lr = new Date(h.lastRun);
+            if (!isNaN(lr.getTime())) lastRunTxt = ` · última corrida: ${lr.toLocaleString([], { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+        }
+        const counts = (typeof h.successCount === 'number' && typeof h.totalSymbols === 'number')
+            ? ` (${h.successCount}/${h.totalSymbols} acciones)` : '';
+        const failed = (h.failedSymbols && h.failedSymbols.length)
+            ? ` · fallaron: ${h.failedSymbols.join(', ')}` : '';
+        healthInfo = `<br><span style="font-size: 0.75rem; color: ${sc.c}; font-weight: bold;">${sc.t}${counts}</span><span style="font-size: 0.72rem; color: var(--text-secondary);">${lastRunTxt}${failed}</span>`;
+    }
+
     marketStatus.innerHTML = `
         <span class="status-indicator ${indicatorClass}"></span>
         <div>
             Datos del Mercado para: ${today} a las ${time}
             ${usageInfo}
+            ${healthInfo}
         </div>
     `;
     marketStatus.style.borderColor = borderColor;
@@ -742,10 +767,17 @@ async function initDashboard() {
         renderCclIndicator();
     };
 
+    const handleHealthUpdate = (healthData) => {
+        globalHealthData = healthData;
+        window.healthData = healthData;
+        renderMarketStatus();
+    };
+
     if (realDataService) {
         await realDataService.loadStocks(handleStockUpdate, handleProgress);
         await realDataService.loadMacroIndicator(handleMacroUpdate);
         await realDataService.loadCclHistory(handleCclHistoryUpdate);
+        await realDataService.loadHealth(handleHealthUpdate);
         await updateIolStatus();
     } else {
         container.innerHTML = "Error: Service not found. Check realData.js";
@@ -1017,9 +1049,17 @@ function createCardHTML(item) {
         const epsVal = (data.eps != null && data.eps !== 'N/A')
             ? data.eps
             : ((data.eps === undefined && data.epsGrowth != null && data.epsGrowth !== 'N/A') ? data.epsGrowth : '--');
+        // Marca de trazabilidad: si el fundamental viene de la tabla de respaldo (no de Yahoo
+        // en vivo), lo señalamos para no aparentar que un PER/EPS congelado es dato fresco.
+        let fundTag = '';
+        if (data.fundamentalsSource === 'static') {
+            fundTag = ` <span title="Dato estimado de tabla de respaldo, no en vivo" style="font-size:0.6rem; color:#eab308; border:1px solid #eab308; border-radius:3px; padding:0 3px;">EST.</span>`;
+        } else if (data.fundamentalsSource === 'live') {
+            fundTag = ` <span title="Dato traído en vivo de Yahoo Finance" style="font-size:0.6rem; color:var(--accent-green); border:1px solid var(--accent-green); border-radius:3px; padding:0 3px;">LIVE</span>`;
+        }
         fundamentalHtml += `
         <div class="analysis-item">
-            <span class="analysis-label">PER Ratio / EPS</span>
+            <span class="analysis-label">PER Ratio / EPS${fundTag}</span>
             <span class="analysis-value">${data.peRatio} / $${epsVal}</span>
         </div>`;
         // Crecimiento real de ganancias (solo formato nuevo, cuando es un % válido)

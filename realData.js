@@ -104,6 +104,20 @@ export class RealDataService {
         }
     }
 
+    // Método para cargar el estado de salud de la última sincronización (1 sola lectura).
+    // El backend escribe "meta/health" al final de cada corrida de update-data.js.
+    async loadHealth(onHealthLoaded) {
+        try {
+            const docRef = doc(this.db, "meta", "health");
+            const docSnap = await getDoc(docRef);
+            if (docSnap.exists()) {
+                onHealthLoaded(docSnap.data());
+            }
+        } catch (e) {
+            console.error("Firestore Health Read Error:", e);
+        }
+    }
+
     // Método para cargar historial de CCL
     async loadCclHistory(onHistoryLoaded) {
         try {
