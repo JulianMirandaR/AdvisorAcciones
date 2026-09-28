@@ -7,7 +7,7 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/fi
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
 import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
 import { runBacktest } from './backtestEngine.js';
-import { hasOversoldBullishDivergence } from './utils.js';
+import { hasOversoldBullishDivergence, escapeHtml } from './utils.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
@@ -1058,12 +1058,24 @@ function createCardHTML(item) {
     if (analysis.ai.usable) {
         const aiColor = analysis.ai.bias === "BULLISH" ? "var(--accent-green)" : (analysis.ai.bias === "BEARISH" ? "var(--accent-red)" : "var(--text-secondary)");
         const aiText = analysis.ai.bias === "BULLISH" ? "Alcista" : (analysis.ai.bias === "BEARISH" ? "Bajista" : "Neutral");
+
+        // Razonamiento textual de la IA (antes solo salía en un alert y se perdía). Lo tomamos del
+        // caché de OpenAI/Legacy y lo mostramos en la tarjeta, escapado por seguridad.
+        const aiCache = (window.aiPredictionCacheOpenAI && window.aiPredictionCacheOpenAI[data.symbol])
+            || (window.aiPredictionCacheLegacy && window.aiPredictionCacheLegacy[data.symbol])
+            || null;
+        const aiThought = aiCache && aiCache.thought ? aiCache.thought : null;
+        const thoughtHtml = aiThought
+            ? `<div style="margin-top:0.5rem; padding:0.5rem 0.7rem; background:rgba(16,163,127,0.08); border:1px solid rgba(16,163,127,0.35); border-radius:6px; font-size:0.78rem; line-height:1.35; color:var(--text-primary);">💭 <b style="color:#10a37f;">Opinión IA:</b> ${escapeHtml(aiThought)}</div>`
+            : '';
+
         aiBadgeHtml = `
             <div style="margin-top: 0.8rem; display:flex; gap:0.5rem; font-size: 0.75rem; flex-wrap: wrap;">
                 <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid ${aiColor}; color: ${aiColor}; font-weight: bold;">🧠 IA: ${aiText}</span>
                 <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; color: var(--text-secondary);">Confianza: ${(analysis.ai.strength * 100).toFixed(0)}%</span>
                 <span style="background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; color: var(--text-secondary);">Nivel: <b style="color: ${analysis.confirmationLevel === 'ALTA CONFIANZA' ? 'var(--accent-green)' : (analysis.confirmationLevel === 'CONFLICTO' ? 'var(--accent-red)' : 'var(--text-primary)')}">${analysis.confirmationLevel}</b></span>
             </div>
+            ${thoughtHtml}
         `;
     }
 

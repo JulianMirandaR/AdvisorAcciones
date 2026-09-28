@@ -2,7 +2,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const { detectBullishRsiDivergence, hasOversoldBullishDivergence } = await import('../utils.js');
+const { detectBullishRsiDivergence, hasOversoldBullishDivergence, escapeHtml } = await import('../utils.js');
+
+test('escapeHtml: neutraliza caracteres peligrosos y maneja null', () => {
+    assert.equal(escapeHtml('<script>alert(1)</script>'), '&lt;script&gt;alert(1)&lt;/script&gt;');
+    assert.equal(escapeHtml('a & b "c" \'d\''), 'a &amp; b &quot;c&quot; &#39;d&#39;');
+    assert.equal(escapeHtml(null), '');
+    assert.equal(escapeHtml('texto normal'), 'texto normal');
+});
 
 // Construye 20 días donde el precio hace un mínimo igual o menor pero el RSI sube (divergencia).
 function divergentHistory() {

@@ -48,16 +48,8 @@ export async function handlePredictOpenAI(symbol, globalStocksData, callbackRefr
             thought: result.thought
         };
 
-        const popText = `🤖 OPEN AI PREDICT (${symbol})
-----------------------------------
-${result.thought || 'Análisis basado en el contexto de mercado'}
-----------------------------------
-📊 Probabilidad Alcista: ${(result.probability*100).toFixed(1)}%
-🎯 Confianza: ${result.confidence}/100
-Sesgo: ${result.bias}
-`;
-
-        alert(popText);
+        // La opinión ya no se muestra en un alert que se pierde: al refrescar, queda visible en la
+        // tarjeta (badge de IA + razonamiento "Opinión IA"). Ver createCardHTML en app.js.
         callbackRefreshUI();
 
     } catch (e) {

@@ -1,6 +1,14 @@
 // Utilidades puras (sin DOM ni estado global) extraídas de app.js para poder testearlas aisladas
 // y empezar a modularizar el archivo grande. Primera tajada: detección de divergencia de RSI.
 
+// Escapa texto para insertarlo con seguridad en innerHTML (evita inyección de HTML/XSS).
+// Se usa, por ejemplo, para mostrar el texto que devuelve la IA dentro de una tarjeta.
+export function escapeHtml(str) {
+    if (str == null) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    return String(str).replace(/[&<>"']/g, (c) => map[c]);
+}
+
 // --- DIVERGENCIA ALCISTA DE RSI (RSI en sobreventa + divergencia con el precio) ---
 // Heurística simple, no una detección rigurosa de pivotes/fractales: compara el mínimo de precio
 // más reciente contra el mínimo previo dentro de la ventana. Si el precio iguala/hace un mínimo
