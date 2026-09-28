@@ -23,7 +23,7 @@
             <h1>Advisor de Inversiones</h1>
             <p>Análisis Técnico y Fundamental en Tiempo Real</p>
             <div class="header-controls">
-                <div id="iolStatusBadge" onclick="window.openIolSettings()" style="display: flex; align-items: center; padding: 0.4rem 0.8rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-secondary); margin-right: 0.5rem; cursor: pointer;" title="Configurar cuenta de InvertirOnline">
+                <div id="iolStatusBadge" role="button" tabindex="0" aria-label="Configurar cuenta de InvertirOnline" onclick="window.openIolSettings()" style="display: flex; align-items: center; padding: 0.4rem 0.8rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--border-color); font-size: 0.8rem; color: var(--text-secondary); margin-right: 0.5rem; cursor: pointer;" title="Configurar cuenta de InvertirOnline">
                     <span style="font-weight: bold; margin-right: 0.4rem;">IOL:</span>
                     <span id="iolStatusText">Cargando...</span>
                     <span id="iolBalanceText" style="margin-left: 0.5rem; color: var(--accent-green); font-weight: bold;"></span>
@@ -32,8 +32,8 @@
                     <span id="cloudStatusText">Iniciar Sesión</span>
                 </button>
             </div>
-            <div class="notifications-wrapper" id="notifWrapper" onclick="toggleNotifications()">
-                <div class="bell-icon">🔔<span class="badge" id="notifBadge" style="display:none;">0</span></div>
+            <div class="notifications-wrapper" id="notifWrapper" role="button" tabindex="0" aria-label="Ver notificaciones" onclick="toggleNotifications()">
+                <div class="bell-icon" aria-hidden="true">🔔<span class="badge" id="notifBadge" style="display:none;">0</span></div>
                 <div class="notifications-dropdown" id="notifDropdown">
                     <div class="notif-header">Notificaciones</div>
                     <div class="notif-body" id="notifBody">
@@ -64,11 +64,11 @@
 
                     <button class="tab-btn" data-term="bot_chatgpt_portfolio" style="border: 1px solid var(--accent-green); color: var(--accent-green);">Bot ChatGPT</button>
                     <button class="tab-btn" data-term="bot_historial" style="border: 1px solid var(--text-secondary); color: var(--text-secondary);">Historial Bots</button>
-                    <div style="display: flex; align-items: center; margin-left: 1rem; padding: 0.5rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--accent-blue); cursor: pointer;" onclick="window.toggleAutoTrading()">
+                    <div role="button" tabindex="0" aria-label="Activar o desactivar Auto-Trading" style="display: flex; align-items: center; margin-left: 1rem; padding: 0.5rem; background: var(--hover-bg); border-radius: 4px; border: 1px solid var(--accent-blue); cursor: pointer;" onclick="window.toggleAutoTrading()">
                         <span id="autoTradingLabel" style="font-size: 0.8rem; font-weight: bold; margin-right: 0.5rem; color: var(--text-primary);">Auto-Trading</span>
-                        <div id="autoTradeBtn" style="width: 12px; height: 12px; border-radius: 50%; background-color: var(--accent-red); box-shadow: 0 0 5px var(--accent-red);"></div>
+                        <div id="autoTradeBtn" aria-hidden="true" style="width: 12px; height: 12px; border-radius: 50%; background-color: var(--accent-red); box-shadow: 0 0 5px var(--accent-red);"></div>
                     </div>
-                    <button onclick="window.openBotSettings()" style="margin-left: 0.5rem; background: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.4rem; cursor: pointer; color: var(--text-secondary);" title="Configuración del Bot">⚙️</button>
+                    <button onclick="window.openBotSettings()" aria-label="Configuración del Bot" style="margin-left: 0.5rem; background: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.4rem; cursor: pointer; color: var(--text-secondary);" title="Configuración del Bot">⚙️</button>
                 </div>
 
                 <div class="controls-container">
@@ -167,7 +167,7 @@
         <!-- Backtesting Modal FASE 1 -->
         <div id="backtestModal" class="modal">
             <div class="modal-content" style="max-width: 900px;">
-                <span style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('backtestModal').style.display='none'">&times;</span>
+                <span role="button" tabindex="0" aria-label="Cerrar" style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('backtestModal').style.display='none'">&times;</span>
                 <h2 id="btSymbolTitle" style="margin-bottom: 1rem;">Simulación de Estrategia</h2>
                 
                 <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; background: var(--hover-bg); padding: 1rem; border-radius: 8px;">
@@ -238,7 +238,7 @@
         <!-- Modal for details -->
         <div id="stockModal" class="modal">
             <div class="modal-content">
-                <span class="close-modal">&times;</span>
+                <span class="close-modal" role="button" tabindex="0" aria-label="Cerrar">&times;</span>
                 <div id="modalBody"></div>
             </div>
         </div>
@@ -381,7 +381,7 @@
         <!-- Guía: ¿Cuándo comprar? Modal -->
         <div id="entryGuideModal" class="modal">
             <div class="modal-content" style="max-width: 760px; text-align: left;">
-                <span style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('entryGuideModal').style.display='none'">&times;</span>
+                <span role="button" tabindex="0" aria-label="Cerrar" style="float:right; font-size:2rem; cursor:pointer; color:var(--text-secondary);" onclick="document.getElementById('entryGuideModal').style.display='none'">&times;</span>
                 <h2 style="margin-bottom: 0.3rem;">📘 ¿Cuándo comprar? El momento exacto de entrada</h2>
                 <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1.2rem;">El score te dice <b>QUÉ</b> acción tiene buen setup. Esta guía te ayuda a decidir <b>CUÁNDO</b> apretar comprar. La señal es del cierre anterior: el "cuándo" lo confirmás vos con estos pasos.</p>
 

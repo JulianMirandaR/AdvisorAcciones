@@ -1176,7 +1176,7 @@ function createCardHTML(item) {
         <div class="card-header" style="margin-bottom: 0;">
             <div>
                 <div class="stock-symbol">${displaySymbol}${flag} 
-                    <span class="watchlist-star ${starClass}" onclick="toggleWatchlist('${data.symbol}', event)">★</span>
+                    <span class="watchlist-star ${starClass}" role="button" tabindex="0" aria-label="${isFavorite ? 'Quitar de' : 'Agregar a'} favoritas" onclick="toggleWatchlist('${data.symbol}', event)">★</span>
                 </div>
                 <div class="stock-name">${data.name}</div>
             </div>
@@ -1260,6 +1260,24 @@ function createCardHTML(item) {
     `;
     return card;
 }
+
+// --- ACCESIBILIDAD: navegación por teclado ---
+// Escape cierra cualquier modal abierto; Enter/Espacio activan los controles hechos con
+// <div>/<span> que tienen role="button" (para que funcionen sin mouse, no solo al clickear).
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('.modal').forEach(m => {
+            if (getComputedStyle(m).display !== 'none') m.style.display = 'none';
+        });
+    }
+    if ((e.key === 'Enter' || e.key === ' ')) {
+        const el = document.activeElement;
+        if (el && el.getAttribute && el.getAttribute('role') === 'button') {
+            e.preventDefault();
+            el.click();
+        }
+    }
+});
 
 // Event Listeners
 tabs.forEach(tab => {

@@ -961,3 +961,16 @@ header h1 {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* --- Accesibilidad: foco visible por teclado --- */
+/* Solo aparece al navegar con teclado (Tab), no al hacer click con el mouse. */
+:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* Elementos clickeables hechos con <div>/<span> (con role="button") deben verse interactivos. */
+[role="button"] {
+    cursor: pointer;
+}
