@@ -7,6 +7,7 @@ import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/fi
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
 import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
 import { runBacktest } from './backtestEngine.js';
+import { hasOversoldBullishDivergence } from './utils.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
 const chartInstances = {};
@@ -498,50 +499,8 @@ function validateEntry(analysis, symbol) {
     return { valid: true };
 }
 
-// --- DIVERGENCIA ALCISTA DE RSI (RSI en sobreventa + divergencia con el precio) ---
-// Heuristica simple, no una deteccion rigurosa de pivotes/fractales: compara el minimo de precio
-// mas reciente contra el minimo previo dentro de la ventana. Si el precio iguala/hace un minimo
-// nuevo pero el RSI en ese punto queda POR ENCIMA del RSI que tuvo en el minimo previo, el impulso
-// bajista se esta debilitando aunque el precio siga cayendo - la divergencia clasica de reversion.
-const RSI_DIVERGENCE_LOOKBACK_DAYS = 20;
-const RSI_OVERSOLD_THRESHOLD = 30;
-
-function detectBullishRsiDivergence(data) {
-    const hist = data.history;
-    if (!hist || !Array.isArray(hist.prices) || !Array.isArray(hist.rsi)) return false;
-    if (hist.prices.length < RSI_DIVERGENCE_LOOKBACK_DAYS || hist.rsi.length < RSI_DIVERGENCE_LOOKBACK_DAYS) return false;
-
-    const prices = hist.prices.slice(-RSI_DIVERGENCE_LOOKBACK_DAYS).map(Number);
-    const rsis = hist.rsi.slice(-RSI_DIVERGENCE_LOOKBACK_DAYS).map(v => (v == null ? null : Number(v)));
-
-    const currentPrice = prices[prices.length - 1];
-    const currentRsi = rsis[rsis.length - 1];
-    if (isNaN(currentPrice) || currentRsi == null || isNaN(currentRsi)) return false;
-
-    // Minimo de precio previo dentro de la ventana, sin contar el dia de hoy.
-    let priorLowIdx = -1;
-    let priorLowPrice = Infinity;
-    for (let i = 0; i < prices.length - 1; i++) {
-        if (!isNaN(prices[i]) && prices[i] < priorLowPrice) {
-            priorLowPrice = prices[i];
-            priorLowIdx = i;
-        }
-    }
-    if (priorLowIdx === -1 || rsis[priorLowIdx] == null || isNaN(rsis[priorLowIdx])) return false;
-
-    const priceHizoMinimoIgualOMenor = currentPrice <= priorLowPrice * 1.005; // 0.5% de tolerancia
-    const rsiHizoMinimoMasAlto = currentRsi > rsis[priorLowIdx];
-
-    return priceHizoMinimoIgualOMenor && rsiHizoMinimoMasAlto;
-}
-
-// Combina la divergencia con RSI en sobreventa (el par que efectivamente se usa como aviso de
-// oportunidad; una divergencia sin sobreventa es mucho menos significativa).
-function hasOversoldBullishDivergence(data) {
-    const rsiNow = parseFloat(data.rsi);
-    if (isNaN(rsiNow) || rsiNow >= RSI_OVERSOLD_THRESHOLD) return false;
-    return detectBullishRsiDivergence(data);
-}
+// La detección de divergencia de RSI (detectBullishRsiDivergence / hasOversoldBullishDivergence)
+// vive ahora en utils.js (funciones puras, testeables). Se importan arriba.
 
 // --- AUTO-IA PARA TOP-N CANDIDATOS ---
 // Antes la confirmación de OpenAI había que pedirla a mano en cada tarjeta, por lo que en la
@@ -3015,6 +2974,16 @@ window.executeBacktestUI = () => {
             </div>`;
         }
 
+        // Aviso de fiabilidad estadística: con pocos trades el resultado no es concluyente.
+        let reliabilityHtml = '';
+        if (results.sampleReliability && results.sampleReliability !== 'alta') {
+            const relColor = results.sampleReliability === 'baja' ? 'var(--accent-red)' : '#eab308';
+            const relTxt = results.sampleReliability === 'baja'
+                ? 'Muestra chica: pocos trades, el resultado NO es concluyente (puede ser suerte).'
+                : 'Muestra moderada: tomá el resultado con cautela.';
+            reliabilityHtml = `<div style="width:100%; font-size:0.75rem; color:${relColor}; border:1px dashed ${relColor}; border-radius:6px; padding:0.5rem 0.8rem; margin-bottom:0.8rem;">⚠️ ${relTxt} (${results.trades.length} trades)</div>`;
+        }
+
         const colorClasses = results.totalReturn >= 0 ? "var(--accent-green)" : "var(--accent-red)";
 
         // --- VEREDICTO: ¿la estrategia agrega valor sobre comprar y mantener? ---
@@ -3042,11 +3011,11 @@ window.executeBacktestUI = () => {
             </div>`;
         }
 
-        document.getElementById('btResults').innerHTML = abHtml + verdictHtml + `
+        document.getElementById('btResults').innerHTML = reliabilityHtml + abHtml + verdictHtml + `
             <div style="display:flex; gap:0.5rem; flex-wrap:wrap; width:100%;">
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">CAPITAL FINAL</span><br><b style="font-size:1.2rem; color:${colorClasses};">$${results.finalCapital.toFixed(2)}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">RETORNO</span><br><b style="font-size:1.2rem; color:${colorClasses};">${(results.totalReturn*100).toFixed(2)}%</b></div>
-            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">WIN RATE</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${(results.winRate*100).toFixed(1)}%</b></div>
+            <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">WIN RATE</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${(results.winRate*100).toFixed(1)}%</b>${results.winRateCI ? `<br><span style="font-size:0.62rem; color:var(--text-secondary);">IC95%: ${(results.winRateCI.low*100).toFixed(0)}–${(results.winRateCI.high*100).toFixed(0)}%</span>` : ''}</div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">MAX DRAWDOWN</span><br><b style="font-size:1.2rem; color:var(--accent-red);">${(results.maxDrawdown*100).toFixed(1)}%</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">PROFIT FACTOR</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.profitFactor}</b></div>
             <div style="flex:1; min-width: 100px; text-align:center;"><span style="color:var(--text-secondary); font-size:0.75rem;">TRADES</span><br><b style="font-size:1.2rem; color:var(--text-primary);">${results.trades.length}</b></div>

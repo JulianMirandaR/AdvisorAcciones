@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js && node --check devFixtures.js && node --check uiFeatures.js",
+    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js && node --check devFixtures.js && node --check uiFeatures.js && node --check utils.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,mjs,css,html,json}\"",

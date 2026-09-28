@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 // El motor de análisis lee window.* dentro de sus funciones; lo definimos antes de usarlo.
 globalThis.window = { strategyMode: 'hybrid' };
 
-const { runBacktest, atrProxyFromCloses } = await import('../backtestEngine.js');
+const { runBacktest, atrProxyFromCloses, wilsonInterval } = await import('../backtestEngine.js');
 
 // --- Helpers ---
 function buildSeries({ n = 120, start = 100, drift = 0.004, wave = 0.006 } = {}) {
@@ -33,6 +33,23 @@ function buildSeries({ n = 120, start = 100, drift = 0.004, wave = 0.006 } = {})
 }
 
 const bullCfg = { capital: 10000, marketCondition: 'BULL', term: 'short' };
+
+test('wilsonInterval: rango honesto que contiene la proporción y se angosta con más muestra', () => {
+    assert.deepEqual(wilsonInterval(0.5, 0), { low: 0, high: 0 }); // sin muestra
+    const few = wilsonInterval(0.6, 10);
+    const many = wilsonInterval(0.6, 200);
+    assert.ok(few.low >= 0 && few.high <= 1);
+    assert.ok(few.low < 0.6 && few.high > 0.6, 'el intervalo debe contener la proporción');
+    const anchoPocos = few.high - few.low;
+    const anchoMuchos = many.high - many.low;
+    assert.ok(anchoMuchos < anchoPocos, 'con más trades el intervalo debe ser más angosto');
+});
+
+test('runBacktest expone winRateCI y sampleReliability', () => {
+    const r = runBacktest(buildSeries(), { ...bullCfg, sizingMode: 'allin' });
+    assert.ok(r.winRateCI && typeof r.winRateCI.low === 'number' && typeof r.winRateCI.high === 'number');
+    assert.ok(['baja', 'media', 'alta'].includes(r.sampleReliability));
+});
 
 test('atrProxyFromCloses: promedio del movimiento absoluto diario', () => {
     // Movimientos: |102-100|=2, |101-102|=1, |104-101|=3  -> media = 2

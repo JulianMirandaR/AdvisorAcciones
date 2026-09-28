@@ -20,6 +20,16 @@ export function atrProxyFromCloses(closes, period = 14) {
     return sum / n;
 }
 
+// Intervalo de confianza de Wilson para una proporción (ej. el win rate). Da un rango honesto
+// en vez de un número puntual: con pocos trades el rango es enorme, avisando que el dato es flojo.
+export function wilsonInterval(p, n, z = 1.96) {
+    if (!n || n <= 0) return { low: 0, high: 0 };
+    const denom = 1 + (z * z) / n;
+    const center = (p + (z * z) / (2 * n)) / denom;
+    const margin = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+    return { low: Math.max(0, center - margin), high: Math.min(1, center + margin) };
+}
+
 export function runBacktest(stockHistoryChronological, config = {}) {
     if (!Array.isArray(stockHistoryChronological) || stockHistoryChronological.length === 0) {
         console.error("Backtest falló: stockHistory vacio o invalido.");
@@ -244,6 +254,11 @@ export function runBacktest(stockHistoryChronological, config = {}) {
     const winningTrades = trades.filter(t => t.profit > 0).length;
     const winRate = trades.length > 0 ? (winningTrades / trades.length) : 0;
     const profitFactor = grossLoss > 0 ? (grossProfit / grossLoss) : (grossProfit > 0 ? Infinity : 0);
+
+    // Honestidad estadística: intervalo de confianza del win rate y una etiqueta de fiabilidad
+    // según cuántos trades hubo. Pocos trades => rango enorme => el resultado no es concluyente.
+    const winRateCI = wilsonInterval(winRate, trades.length);
+    const sampleReliability = trades.length >= 30 ? 'alta' : (trades.length >= 10 ? 'media' : 'baja');
     const totalReturn = (currentCapital - capital) / capital;
     const exposurePct = testData.length > 0 ? (daysInMarket / testData.length) : 0;
 
@@ -298,6 +313,8 @@ export function runBacktest(stockHistoryChronological, config = {}) {
         finalCapital: currentCapital,
         totalReturn: totalReturn,
         winRate: winRate,
+        winRateCI: winRateCI,
+        sampleReliability: sampleReliability,
         maxDrawdown: maxDrawdown,
         profitFactor: profitFactor === Infinity ? "Infinity" : profitFactor.toFixed(2),
         exposurePct: exposurePct,
