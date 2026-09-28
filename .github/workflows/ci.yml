@@ -17,10 +17,14 @@ jobs:
         with:
           node-version: '20'
 
-      # Los tests y el chequeo de sintaxis solo usan módulos locales (sin dependencias externas),
-      # así que no hace falta `npm ci`: corren directo con node.
+      - name: Instalar dependencias
+        run: npm ci
+
       - name: Chequeo de sintaxis
         run: npm run check
+
+      - name: Lint (ESLint)
+        run: npm run lint
 
       - name: Tests
         run: npm test

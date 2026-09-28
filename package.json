@@ -4,10 +4,20 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js && node --check devFixtures.js"
+    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js && node --check devFixtures.js && node --check uiFeatures.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,mjs,css,html,json}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,css,html,json}\""
   },
   "dependencies": {
     "firebase": "^10.8.1",
     "openai": "^6.37.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9"
   }
 }

@@ -1240,6 +1240,8 @@ function createCardHTML(item) {
             </div>
         </div>
 
+        ${fundamentalHtml ? `<div class="analysis-grid" style="grid-template-columns: 1fr 1fr; gap:0.5rem; margin-bottom:1rem;">${fundamentalHtml}</div>` : ''}
+
         <div class="signals-section">
             <div class="section-title">Análisis de Señales</div>
             <ul class="signal-list">
@@ -2887,7 +2889,7 @@ window.openBacktestModal = (symbol) => {
     window.currentBtSymbol = symbol;
     document.getElementById('btSymbolTitle').innerText = `Simulando Oportunidad - ${symbol}`;
     // We execute default instantly
-    executeBacktestUI();
+    window.executeBacktestUI();
 };
 
 window.executeBacktestUI = () => {

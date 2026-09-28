@@ -81,8 +81,7 @@ export function handleOpenNewsModal(symbol, globalStocksData) {
     const container = document.getElementById('newsContainer');
     
     let htmlContent = '';
-    const sentiment = stock.newsSentiment || 0;
-    
+
     if (stock.newsList && stock.newsList.length > 0) {
         htmlContent = stock.newsList.map((n, i) => {
             let borderColor = 'var(--border-color)';
