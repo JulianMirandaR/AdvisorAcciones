@@ -2,10 +2,32 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { getAuth } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+import { mockStocks, mockMacro, mockCclHistory, mockHealth } from "./devFixtures.js";
 
-// Obtener configuración de Firebase desde el backend para evitar exponer claves en el código
-const configResponse = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/config');
-const firebaseConfig = await configResponse.json();
+// --- DETECCIÓN DE ENTORNO LOCAL ---
+// En localhost (o file://) no tenemos acceso a la config del backend por CORS ni permisos de
+// Firestore, así que la app entera se caía al cargar. En ese caso activamos un "modo mock" que
+// sirve datos de ejemplo (devFixtures.js) para poder ver y desarrollar la UI sin la nube.
+// En producción (Vercel / GitHub Pages) IS_MOCK es false y todo funciona como siempre.
+const isLocalDev = (typeof location !== 'undefined') && (
+    ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) ||
+    (location.hostname && (location.hostname.endsWith('.localhost') || location.hostname.endsWith('.test'))) ||
+    location.protocol === 'file:'
+);
+export const IS_MOCK = isLocalDev;
+
+let firebaseConfig;
+if (!IS_MOCK) {
+    // Obtener configuración de Firebase desde el backend para evitar exponer claves en el código
+    const configResponse = await fetch('https://advisoraccionesbackend-production.up.railway.app/api/ai/config');
+    firebaseConfig = await configResponse.json();
+} else {
+    // Config placeholder: solo sirve para que initializeApp/getAuth no exploten (varios módulos
+    // usan `auth` al cargar). Nunca se usa contra el backend real: en modo mock las lecturas de
+    // datos se cortan antes y devuelven las fixtures.
+    firebaseConfig = { apiKey: 'dev-mock', authDomain: 'localhost', projectId: 'dev-mock', appId: '1:0:web:dev' };
+    console.warn('%c[DEV] Modo mock activo: datos de EJEMPLO, sin nube. No usar para operar.', 'color:#eab308;font-weight:bold;font-size:13px');
+}
 
 // Initialize Firebase
 export const app = initializeApp(firebaseConfig);
@@ -54,6 +76,15 @@ export class RealDataService {
 
     // Método principal: Carga desde Firebase
     async loadStocks(onStockLoaded, onProgressMsg) {
+        // Modo mock (desarrollo local): datos de ejemplo, sin tocar la nube.
+        if (IS_MOCK) {
+            window.dataDateStr = new Date().toISOString().split('T')[0];
+            window.dataAgeDays = 0;
+            const list = mockStocks();
+            onStockLoaded(list);
+            if (onProgressMsg) onProgressMsg("🧪 Modo DEMO local: mostrando datos de ejemplo (sin nube).");
+            return;
+        }
         // 1. Ya no usamos localStorage para caché de mercado
         // 2. Obtener datos globales de Firebase (La nube)
         if (onProgressMsg) onProgressMsg("Sincronizando con la nube de precios...");
@@ -92,6 +123,7 @@ export class RealDataService {
 
     // Método para cargar datos Macro (Indicador Buffett)
     async loadMacroIndicator(onMacroLoaded) {
+        if (IS_MOCK) { onMacroLoaded(mockMacro()); return; }
         try {
             const docRef = doc(this.db, "macro", "latest");
             const docSnap = await getDoc(docRef);
@@ -107,6 +139,7 @@ export class RealDataService {
     // Método para cargar el estado de salud de la última sincronización (1 sola lectura).
     // El backend escribe "meta/health" al final de cada corrida de update-data.js.
     async loadHealth(onHealthLoaded) {
+        if (IS_MOCK) { onHealthLoaded(mockHealth()); return; }
         try {
             const docRef = doc(this.db, "meta", "health");
             const docSnap = await getDoc(docRef);
@@ -120,6 +153,7 @@ export class RealDataService {
 
     // Método para cargar historial de CCL
     async loadCclHistory(onHistoryLoaded) {
+        if (IS_MOCK) { onHistoryLoaded(mockCclHistory()); return; }
         try {
             const docRef = doc(this.db, "macro", "ccl_history");
             const docSnap = await getDoc(docRef);

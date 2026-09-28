@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js"
+    "check": "node --check app.js && node --check analysisEngine.js && node --check backtestEngine.js && node --check realData.js && node --check devFixtures.js"
   },
   "dependencies": {
     "firebase": "^10.8.1",

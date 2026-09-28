@@ -1,6 +1,6 @@
 // --- Analysis Logic ---
 // (Note: `stocks` array and `generateStockData` removed as requested)
-import { RealDataService, auth, db } from './realData.js';
+import { RealDataService, auth, db, IS_MOCK } from './realData.js';
 // mlModel.js is now handled by uiFeatures.js
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
@@ -842,7 +842,9 @@ function refreshUI() {
     const currentScroll = window.scrollY; // Guardar posición del scroll para evitar "saltos" molestos
     
     // --- CARGANDO SESIÓN ---
-    if (!window.authInitialized) {
+    // En modo mock (desarrollo local) no hay sesión real: saltamos los muros de auth para poder
+    // ver las recomendaciones con los datos de ejemplo.
+    if (!window.authInitialized && !IS_MOCK) {
         container.style.display = 'flex';
         container.innerHTML = `
             <div style="text-align:center; padding: 4rem 1rem; width: 100%;">
@@ -864,7 +866,7 @@ function refreshUI() {
     }
 
     // --- ACCESO RESTRINGIDO SI NO HAY SESIÓN ---
-    if (!window.cloudSynced) {
+    if (!window.cloudSynced && !IS_MOCK) {
         container.style.display = 'flex';
         container.innerHTML = `
             <div style="text-align:center; padding: 4rem 1rem; width: 100%;">
@@ -1927,6 +1929,11 @@ window.handleAuthSubmit = async function() {
 // Monitor de estado de autenticación (Se ejecuta automáticamente cuando Firebase detecta estado)
 onAuthStateChanged(auth, async (user) => {
     window.authInitialized = true;
+    // En modo mock no tocamos la nube: marcamos sesión resuelta y refrescamos la UI de ejemplo.
+    if (IS_MOCK) {
+        if (typeof refreshUI === 'function') refreshUI();
+        return;
+    }
     if (user) {
         window.cloudSynced = true;
         document.getElementById('cloudStatusText').innerText = "Conectado";
