@@ -609,6 +609,21 @@ function checkNotifications(force = false) {
             }
         }
 
+        // Aviso de OPORTUNIDAD: la acción entra en "ZONA DE COMPRA" con señal COMPRA/COMPRA FUERTE.
+        // Se avisa una sola vez por aparición (no en cada refresh); se rearma si primero sale de la
+        // zona. Solo para acciones que no tenés en cartera (es un aviso para entrar).
+        if (!portfolioPos) {
+            window.lastZoneAlertSymbols = window.lastZoneAlertSymbols || new Set();
+            const ez = userAnalysis.entryZone;
+            const inBuyZone = ez && ez.status === 'EN_ZONA' && (userSig === 'COMPRA' || userSig === 'COMPRA FUERTE');
+            if (inBuyZone && !window.lastZoneAlertSymbols.has(stock.symbol)) {
+                window.lastZoneAlertSymbols.add(stock.symbol);
+                window.addNotification(`🎯 ${stock.symbol}: en ZONA DE COMPRA con señal ${userSig} (precio $${stock.price}).`, 'buy', stock.symbol);
+            } else if (!inBuyZone) {
+                window.lastZoneAlertSymbols.delete(stock.symbol);
+            }
+        }
+
         // Guardar última señal conocida
         if (userSig !== prevSignal) {
             window.lastKnownSignals[stock.symbol] = userSig;
@@ -1195,6 +1210,7 @@ function createCardHTML(item) {
             ${analysis.conflicto ? `<div style="margin-top:0.5rem;"><span style="background: var(--accent-red); color: white; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem;">⚠️ ${analysis.conflicto}</span></div>` : ''}
             <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                 <button type="button" onclick="event.preventDefault(); addToPortfolioPrompt('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-secondary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;" onmouseover="this.style.background='var(--hover-bg)'" onmouseout="this.style.background='var(--card-bg)'">+ Portafolio</button>
+                <button type="button" onclick="event.preventDefault(); window.manualBuyIol('${data.symbol}', ${data.price})" title="Comprar esta acción con dinero real en tu cuenta de IOL (el bot no la venderá)" style="background:var(--accent-green); border:none; color:#08120d; cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; font-weight:bold;">💵 Comprar IOL</button>
                 <button type="button" ${window.aiPredictionCacheOpenAI[data.symbol] ? 'disabled' : `onclick="event.preventDefault(); window.predictOpenAI('${data.symbol}')"`} id="btn-ai-open-${data.symbol}" style="background:${window.aiPredictionCacheOpenAI[data.symbol] ? '#4b5563' : '#10a37f'}; border:none; color:white; cursor:${window.aiPredictionCacheOpenAI[data.symbol] ? 'default' : 'pointer'}; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; box-shadow: ${window.aiPredictionCacheOpenAI[data.symbol] ? 'none' : '0 0 5px rgba(16, 163, 127, 0.5)'}; transition:0.2s;" ${!window.aiPredictionCacheOpenAI[data.symbol] ? `onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'"` : ''}>${window.aiPredictionCacheOpenAI[data.symbol] ? '✅ IA Confirmada' : '🧠 OpenAI'}</button>
                 <button type="button" onclick="event.preventDefault(); window.openPriceAlert('${data.symbol}', ${data.price})" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">🔔 Alerta</button>
                 <button type="button" onclick="event.preventDefault(); window.openNewsModal('${data.symbol}')" style="background:var(--card-bg); border:1px solid var(--border-color); color:var(--text-primary); cursor:pointer; font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 4px; transition:0.2s;">📰 Noticias</button>
@@ -3142,6 +3158,34 @@ window.executeBacktestUI = () => {
 
 
 
+
+// --- COMPRA MANUAL EN IOL (dinero real) ---
+// Botón aparte del bot automático: el usuario compra una acción puntual con un monto que elige,
+// para probar con poca plata. La posición queda marcada como manual y el bot NO la vende.
+window.manualBuyIol = async (symbol, price) => {
+    if (!auth.currentUser) { window.addNotification('Iniciá sesión para operar en IOL.', 'error'); return; }
+    const amountStr = prompt(`Comprar ${symbol} en IOL (cuenta REAL).\n\nMonto en ARS a invertir (mín. 1.000, máx. 100.000):`, '10000');
+    if (amountStr === null) return;
+    const amountARS = parseFloat(amountStr);
+    if (!(amountARS >= 1000)) { window.addNotification('Monto inválido (mínimo 1.000 ARS).', 'error'); return; }
+    if (!confirm(`⚠️ Vas a comprar ${symbol} por ${amountARS.toLocaleString('es-AR')} ARS con dinero REAL en tu cuenta de IOL.\n\n¿Confirmás la compra?`)) return;
+    try {
+        const resp = await fetch(`${window.API_BASE_URL}/manual-buy`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-uid': auth.currentUser.uid },
+            body: JSON.stringify({ symbol, price, amountARS })
+        });
+        const data = await resp.json();
+        if (data.success) {
+            window.addNotification(`✅ Compra manual en IOL: ${symbol} (${data.qty} nominales). El bot no la venderá.`, 'success', symbol);
+            await updateIolStatus();
+        } else {
+            window.addNotification(`❌ No se pudo comprar ${symbol}: ${data.error || 'error desconocido'}`, 'error');
+        }
+    } catch (e) {
+        window.addNotification(`❌ Error de conexión al comprar ${symbol} en IOL.`, 'error');
+    }
+};
 
 window.disconnectIol = async () => {
     window.iolUsername = "";
