@@ -15,6 +15,26 @@ const chartInstances = {};
 // Configuración de API Backend (Railway)
 window.API_BASE_URL = 'https://advisoraccionesbackend-production.up.railway.app/api/ai';
 
+// --- SEGURIDAD: adjuntar el token de Firebase a TODAS las llamadas al backend ---
+// El backend, en "modo seguro" (firebase-admin), verifica este token para confirmar la identidad
+// del usuario en vez de confiar en un x-uid que cualquiera podría falsificar. Interceptamos fetch
+// en un solo lugar para no depender de recordar agregar el header en cada llamada. Si no hay
+// sesión (o falla), se envía sin token y el backend usa su modo legado (compatibilidad).
+const BACKEND_HOST = 'advisoraccionesbackend-production.up.railway.app';
+const _originalFetch = window.fetch.bind(window);
+window.fetch = async (input, init = {}) => {
+    try {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        if (url.includes(BACKEND_HOST) && auth && auth.currentUser) {
+            const token = await auth.currentUser.getIdToken();
+            init = { ...init, headers: { ...(init.headers || {}), Authorization: 'Bearer ' + token } };
+        }
+    } catch (e) {
+        // Si no se pudo obtener el token, seguimos sin él (el backend caerá a modo legado).
+    }
+    return _originalFetch(input, init);
+};
+
 window.strategyMode = 'hybrid'; // "trend", "reversal", "hybrid"
 
 window.setStrategyMode = (mode) => {
