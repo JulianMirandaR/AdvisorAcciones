@@ -440,8 +440,9 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
             const daysToEarnings = Math.ceil((eDate - new Date()) / (1000 * 60 * 60 * 24));
             if (daysToEarnings >= 0 && daysToEarnings <= 7) {
                 earningsRisk = daysToEarnings;
-                // Cap a "OBSERVAR" (máx 1.5): no permitimos COMPRA con balance a la vuelta.
-                if (finalScore > 1.5) finalScore = 1.5;
+                // Cap a "OBSERVAR" (máx 1.4): no permitimos COMPRA ni PRE-COMPRA con balance a la
+                // vuelta. Ojo: PRE-COMPRA arranca en 1.5, así que capamos a 1.4 para caer en OBSERVAR.
+                if (finalScore > 1.4) finalScore = 1.4;
             }
         }
     }
@@ -466,7 +467,8 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
     const dataAge = (typeof window !== 'undefined' && typeof window.dataAgeDays === 'number') ? window.dataAgeDays : 0;
     if (dataAge > 1) {
         staleData = true;
-        if (finalScore > 1.5) finalScore = 1.5;
+        // Capamos a 1.4 (OBSERVAR): PRE-COMPRA arranca en 1.5, no queremos ni eso con datos viejos.
+        if (finalScore > 1.4) finalScore = 1.4;
     }
 
     // Manejo de Portafolio (Trailing Stop dinámico con ATR)

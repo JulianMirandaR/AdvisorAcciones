@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Los tests y el chequeo de sintaxis solo usan módulos locales (sin dependencias externas),
+      # así que no hace falta `npm ci`: corren directo con node.
+      - name: Chequeo de sintaxis
+        run: npm run check
+
+      - name: Tests
+        run: npm test

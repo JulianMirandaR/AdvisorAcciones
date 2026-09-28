@@ -6,7 +6,6 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthState
 import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
 import { analyzeStockWithMarketCondition, getMarketCondition } from './analysisEngine.js';
 import { handlePredictOpenAI, handleOpenNewsModal } from './uiFeatures.js';
-import { runWalkForwardBacktest } from './walkForwardEngine.js';
 import { runBacktest } from './backtestEngine.js';
 
 // Helper to keep track of chart instances (moved to top to avoid initialization errors)
