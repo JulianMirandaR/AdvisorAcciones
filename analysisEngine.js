@@ -360,6 +360,49 @@ export function computeEntryZone(data) {
     };
 }
 
+// --- SUGERENCIA DE POSICIÓN (cualitativa y breve) ---
+// No da montos exactos: da una idea simple de CUÁNTO invertir según la fuerza del setup
+// (score, zona de entrada, riesgo/beneficio, conflictos y riesgos). Cuanto mejor y más limpio
+// el setup, más convicción; ante extensión, conflicto, datos viejos o balance inminente, menos.
+export function computePositionHint(score, entryZone, opts = {}) {
+    const { conflict = false, staleData = false, earningsRisk = null, confirmation = null } = opts;
+
+    // Si la señal no habilita compra, no sugerimos posición.
+    if (score < 1.5) {
+        return { level: 'NADA', label: 'No comprar por ahora', tag: 'reducida', reason: 'La señal no habilita compra.' };
+    }
+
+    let conv = 0;
+    if (score >= 6.5) conv += 2;
+    else if (score >= 3.5) conv += 1;
+
+    if (entryZone) {
+        if (entryZone.status === 'EN_ZONA') conv += 1;
+        else if (entryZone.status === 'EXTENDIDO') conv -= 2;
+        else if (entryZone.status === 'DEBAJO') conv -= 1;
+        if (entryZone.rr >= 2) conv += 1;
+        else if (entryZone.rr < 1) conv -= 1;
+    }
+
+    if (confirmation === 'ALTA CONFIANZA') conv += 1;
+    if (conflict) conv -= 2;
+    // Riesgos duros: recortan la convicción con fuerza.
+    if (staleData || (earningsRisk !== null && earningsRisk !== undefined)) conv -= 2;
+
+    let level, label, tag, reason;
+    if (conv >= 3) {
+        level = 'BASTANTE'; label = 'Invertir bastante'; tag = 'posición completa';
+        reason = 'Setup fuerte, en zona y con buen riesgo/beneficio.';
+    } else if (conv >= 1) {
+        level = 'MODERADO'; label = 'Invertir moderado'; tag = 'media posición';
+        reason = 'Setup razonable; conviene no ir con todo.';
+    } else {
+        level = 'POCO'; label = 'Invertir poco'; tag = 'posición reducida';
+        reason = 'Señal floja o con riesgos (extensión, conflicto, datos/balance).';
+    }
+    return { level, label, tag, reason };
+}
+
 // OJO: la firma de esta función NO coincide en orden/significado con la de
 // AdvisorAccionesBackend/scripts/botEngine.js (backend: data, marketCondition, portfolioInfo,
 // aiData, strategyMode). Es intencional, no un desprolijidad para "prolijar" en algún momento:
@@ -545,7 +588,15 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
     cp.score = Number(cp.score.toFixed(1));
     lp.score = Number(lp.score.toFixed(1));
 
-    return { 
+    const entryZone = computeEntryZone(data);
+    const positionHint = computePositionHint(finalScore, entryZone, {
+        conflict: isConflict,
+        staleData,
+        earningsRisk,
+        confirmation: confirmationLevel
+    });
+
+    return {
         corto_plazo: cp,
         largo_plazo: lp,
         señal_final: signal, 
@@ -561,7 +612,8 @@ export function analyzeStockWithMarketCondition(data, termIgnored, marketConditi
         earningsRisk,
         staleData,
         dataAge,
-        entryZone: computeEntryZone(data),
+        entryZone,
+        positionHint,
         ai: aiContext,
         confirmationLevel
     };

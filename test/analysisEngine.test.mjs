@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 
 globalThis.window = { strategyMode: 'hybrid', dataAgeDays: 0 };
 
-const { getMarketCondition, computeEntryZone, analyzeStockWithMarketCondition } = await import('../analysisEngine.js');
+const { getMarketCondition, computeEntryZone, computePositionHint, analyzeStockWithMarketCondition } = await import('../analysisEngine.js');
 
 // --- Helpers ---
 function risingHistory(n = 40, start = 80, step = 0.8) {
@@ -70,10 +70,29 @@ test('computeEntryZone: sin precio devuelve null', () => {
     assert.equal(computeEntryZone({ price: 0 }), null);
 });
 
+// --- computePositionHint ---
+test('computePositionHint: setup fuerte y en zona => invertir bastante', () => {
+    const ez = { status: 'EN_ZONA', rr: 2.5 };
+    const h = computePositionHint(7, ez, { confirmation: 'ALTA CONFIANZA' });
+    assert.equal(h.level, 'BASTANTE');
+});
+
+test('computePositionHint: señal que no habilita compra => NADA', () => {
+    const h = computePositionHint(0.5, { status: 'EN_ZONA', rr: 3 }, {});
+    assert.equal(h.level, 'NADA');
+});
+
+test('computePositionHint: extendido o con riesgos => invertir poco', () => {
+    const extendido = computePositionHint(4, { status: 'EXTENDIDO', rr: 0.8 }, {});
+    assert.equal(extendido.level, 'POCO');
+    const conRiesgo = computePositionHint(7, { status: 'EN_ZONA', rr: 2.5 }, { staleData: true, conflict: true });
+    assert.equal(conRiesgo.level, 'POCO');
+});
+
 // --- analyzeStockWithMarketCondition ---
 test('devuelve la forma esperada y score acotado a [-10, 10]', () => {
     const r = analyzeStockWithMarketCondition(bullish, 'short', 'BULL');
-    for (const k of ['signal', 'score', 'corto_plazo', 'largo_plazo', 'entryZone', 'confianza', 'staleData']) {
+    for (const k of ['signal', 'score', 'corto_plazo', 'largo_plazo', 'entryZone', 'positionHint', 'confianza', 'staleData']) {
         assert.ok(k in r, `falta la clave ${k}`);
     }
     assert.ok(r.score >= -10 && r.score <= 10);

@@ -1120,6 +1120,16 @@ function createCardHTML(item) {
         };
         const st = statusMap[ez.status] || statusMap['ACEPTABLE'];
         const rrColor = ez.rr >= 2 ? 'var(--accent-green)' : (ez.rr >= 1 ? '#eab308' : 'var(--accent-red)');
+
+        // Sugerencia de cuánto invertir (breve, cualitativa)
+        let hintHtml = '';
+        const ph = analysis.positionHint;
+        if (ph) {
+            const hintColors = { 'BASTANTE': 'var(--accent-green)', 'MODERADO': '#eab308', 'POCO': 'var(--accent-red)', 'NADA': 'var(--text-secondary)' };
+            const hc = hintColors[ph.level] || 'var(--text-secondary)';
+            hintHtml = `<div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border-color); font-size:0.75rem;" title="${ph.reason}">💰 Cuánto invertir: <b style="color:${hc};">${ph.label}</b> <span style="color:var(--text-secondary);">(${ph.tag})</span></div>`;
+        }
+
         entryZoneHtml = `
         <div style="margin-top:1rem; padding:0.7rem; border:1px solid ${st.c}; border-radius:6px; background:rgba(255,255,255,0.02);">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem; gap:0.5rem; flex-wrap:wrap;">
@@ -1134,6 +1144,7 @@ function createCardHTML(item) {
                 <div style="grid-column:1/3;">⚖️ Riesgo/Beneficio: <b style="color:${rrColor}">${ez.rr}:1</b>${ez.rr < 1 ? ' <span style="color:var(--accent-red)">(desfavorable)</span>' : ''}</div>
             </div>
             <div style="font-size:0.7rem; color:var(--text-secondary); margin-top:0.5rem; line-height:1.3;">${ez.note}</div>
+            ${hintHtml}
         </div>`;
     }
 
